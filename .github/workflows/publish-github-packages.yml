@@ -46,6 +46,8 @@ jobs:
           pkg.publishConfig = {
             registry: 'https://npm.pkg.github.com'
           };
+          delete pkg.scripts;
+          delete pkg.devDependencies;
           fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
           NODE
 
