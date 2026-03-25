@@ -51,8 +51,11 @@ jobs:
           fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
           NODE
 
+      - name: Show publish manifest
+        run: cat publish/github/package.json
+
       - name: Publish to GitHub Packages
         working-directory: publish/github
-        run: npm publish
+        run: npm publish --ignore-scripts
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
