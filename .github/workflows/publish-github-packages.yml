@@ -1,0 +1,56 @@
+name: Publish To GitHub Packages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish-github-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@ryan-prayoga"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Prepare scoped package manifest
+        run: |
+          mkdir -p publish/github
+          cp -R dist publish/github/dist
+          cp README.md LICENSE package.json publish/github/
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const packagePath = path.join(process.cwd(), 'publish/github/package.json');
+          const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+          pkg.name = '@ryan-prayoga/brunogen';
+          pkg.publishConfig = {
+            registry: 'https://npm.pkg.github.com'
+          };
+          fs.writeFileSync(packagePath, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
+      - name: Publish to GitHub Packages
+        working-directory: publish/github
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

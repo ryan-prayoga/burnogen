@@ -23,6 +23,12 @@ From npm:
 npm i -g brunogen
 ```
 
+From GitHub Packages:
+
+```bash
+npm i -g @ryan-prayoga/brunogen --registry=https://npm.pkg.github.com
+```
+
 From GitHub:
 
 ```bash
@@ -102,3 +108,4 @@ Default output:
 - OpenAPI is the normalized source of truth after scanning.
 - Bruno is the output target, not the primary internal model.
 - Current Go response/schema inference is heuristic and will improve over time.
+- GitHub Packages publishes the scoped package `@ryan-prayoga/brunogen`.
