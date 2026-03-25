@@ -4,9 +4,12 @@
   "description": "Generate Bruno collections from Laravel and Go API source code.",
   "type": "commonjs",
   "main": "./dist/index.js",
-  "bin": {
-    "brunogen": "./dist/cli.js"
-  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": "dist/cli.js",
   "scripts": {
     "build": "tsup src/cli.ts src/index.ts --format cjs --dts --clean",
     "prepare": "npm run build",
@@ -25,6 +28,17 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ryan-prayoga/burnogen-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ryan-prayoga/burnogen-cli/issues"
+  },
+  "homepage": "https://github.com/ryan-prayoga/burnogen-cli#readme",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@apidevtools/swagger-parser": "^12.1.0",
     "chokidar": "^5.0.0",
