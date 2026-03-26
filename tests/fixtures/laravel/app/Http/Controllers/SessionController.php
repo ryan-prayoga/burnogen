@@ -6,6 +6,18 @@ use Illuminate\Http\Request;
 
 class SessionController extends Controller
 {
+    public function check(Request $request)
+    {
+        abort_if(!$request->boolean('enabled'), 403, 'Feature disabled');
+
+        return response()->json([
+            'message' => 'Validation failed',
+            'errors' => [
+                'email' => ['The email field is required.'],
+            ],
+        ], 422);
+    }
+
     public function store(Request $request)
     {
         $request->validate([

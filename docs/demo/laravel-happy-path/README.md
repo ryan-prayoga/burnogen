@@ -16,7 +16,7 @@ node ../../../dist/cli.js generate
 Expected result:
 
 ```text
-Generated 5 endpoints.
+Generated 6 endpoints.
 OpenAPI: .../tests/fixtures/laravel/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/laravel/.brunogen/bruno
 ```
@@ -25,4 +25,5 @@ Files in this folder are curated snapshots from that generated output:
 
 - `output-tree.txt`
 - `openapi-snippet.yaml`
+- `bruno/session/sessioncontrollercheck.bru`
 - `bruno/user/usercontrollerstore.bru`

@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->group(function () {
     Route::post('/login', [SessionController::class, 'store']);
+    Route::post('/login/check', [SessionController::class, 'check']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [UserController::class, 'index']);

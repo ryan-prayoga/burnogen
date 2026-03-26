@@ -9,7 +9,7 @@ describe("Laravel adapter", () => {
     const artifacts = await generateArtifacts(fixturePath("laravel"), defaultConfig());
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(5);
+    expect(artifacts.normalized.endpoints).toHaveLength(6);
 
     const login = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/login");
     expect(login?.auth.type).toBe("none");
@@ -26,6 +26,24 @@ describe("Laravel adapter", () => {
       remember_me: true,
       scopes: ["read"],
     });
+
+    const loginCheck = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/login/check");
+    expect(loginCheck?.requestBody?.schema.properties?.enabled?.type).toBe("boolean");
+    expect(loginCheck?.responses).toContainEqual(expect.objectContaining({
+      statusCode: "403",
+      example: {
+        message: "Feature disabled",
+      },
+    }));
+    expect(loginCheck?.responses).toContainEqual(expect.objectContaining({
+      statusCode: "422",
+      example: {
+        message: "Validation failed",
+        errors: {
+          email: ["The email field is required."],
+        },
+      },
+    }));
 
     const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users" && endpoint.method === "post");
     expect(createUser?.auth.type).toBe("bearer");

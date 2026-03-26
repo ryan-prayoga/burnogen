@@ -960,6 +960,12 @@ async function extractLaravelResponses(
     });
   }
 
+  for (const abortResponse of extractLaravelAbortResponses(methodBody)) {
+    if (!responses.has(abortResponse.statusCode)) {
+      responses.set(abortResponse.statusCode, abortResponse);
+    }
+  }
+
   for (const arrayLiteral of extractDirectReturnArrays(methodBody)) {
     const example = parsePhpExampleValue(arrayLiteral, exampleContext);
     const statusCode = "200";
@@ -979,6 +985,32 @@ async function extractLaravelResponses(
     if (!responses.has(response.statusCode)) {
       responses.set(response.statusCode, response);
     }
+  }
+
+  return [...responses.values()];
+}
+
+function extractLaravelAbortResponses(methodBody: string): NormalizedResponse[] {
+  const responses = new Map<string, NormalizedResponse>();
+
+  for (const abortCall of extractLaravelAbortCalls(methodBody)) {
+    const args = splitTopLevel(abortCall.slice(1, -1), ",");
+    const statusCode = parseLaravelStatusCode(args[0]) ?? "500";
+    const message = parsePhpString(args[1] ?? "") ?? defaultAbortMessage(statusCode);
+    responses.set(statusCode, {
+      statusCode,
+      description: "Inferred abort response",
+      contentType: "application/json",
+      schema: {
+        type: "object",
+        properties: {
+          message: { type: "string" },
+        },
+      },
+      example: {
+        message,
+      },
+    });
   }
 
   return [...responses.values()];
@@ -1235,6 +1267,44 @@ function extractReturnResponseJsonCalls(methodBody: string): string[] {
   return results;
 }
 
+function extractLaravelAbortCalls(methodBody: string): string[] {
+  const results: string[] = [];
+  const patterns = [
+    "abort(",
+    "abort_if(",
+    "abort_unless(",
+  ];
+
+  for (const pattern of patterns) {
+    let offset = 0;
+    while (offset < methodBody.length) {
+      const callIndex = methodBody.indexOf(pattern, offset);
+      if (callIndex < 0) {
+        break;
+      }
+
+      const openParenIndex = methodBody.indexOf("(", callIndex + pattern.length - 1);
+      const argsBlock = openParenIndex >= 0 ? extractBalanced(methodBody, openParenIndex, "(", ")") : null;
+      if (!argsBlock) {
+        break;
+      }
+
+      if (pattern === "abort(") {
+        results.push(argsBlock);
+      } else {
+        const args = splitTopLevel(argsBlock.slice(1, -1), ",");
+        if (args.length >= 2) {
+          results.push(`(${args.slice(1).join(",")})`);
+        }
+      }
+
+      offset = openParenIndex + argsBlock.length;
+    }
+  }
+
+  return results;
+}
+
 function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParameter[] {
   const seen = new Set<string>();
   return parameters.filter((parameter) => {
@@ -1334,6 +1404,21 @@ function parseLaravelStatusCode(rawValue?: string): string | undefined {
 
   return statusMap[trimmed];
 }
+
+function defaultAbortMessage(statusCode: string): string {
+  const statusText = defaultStatusTextMap[statusCode];
+  return statusText ?? "Request failed";
+}
+
+const defaultStatusTextMap: Record<string, string> = {
+  "400": "Bad Request",
+  "401": "Unauthorized",
+  "403": "Forbidden",
+  "404": "Not Found",
+  "409": "Conflict",
+  "422": "Unprocessable Entity",
+  "500": "Internal Server Error",
+};
 
 function parsePhpExampleValue(rawValue: string, context?: PhpExampleContext): unknown {
   const value = resolvePhpExampleValue(rawValue, context);
