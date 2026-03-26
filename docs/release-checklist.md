@@ -16,7 +16,7 @@
 
 - Tag the release
 - Publish release notes from `CHANGELOG.md`
-- If GitHub Packages is enabled, verify the workflow publishes the scoped package successfully
+- Check that the `Publish To npm` workflow succeeds for the release tag
 
 ## After release
 
@@ -24,3 +24,4 @@
   `npm i -g brunogen`
 - Run `brunogen --help`
 - Smoke test `brunogen generate` against the Laravel fixture
+- Confirm the npm `latest` dist-tag points to the new version
