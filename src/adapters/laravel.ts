@@ -966,6 +966,12 @@ async function extractLaravelResponses(
     }
   }
 
+  for (const exceptionResponse of extractLaravelExceptionResponses(methodBody, exampleContext)) {
+    if (!responses.has(exceptionResponse.statusCode)) {
+      responses.set(exceptionResponse.statusCode, exceptionResponse);
+    }
+  }
+
   for (const arrayLiteral of extractDirectReturnArrays(methodBody)) {
     const example = parsePhpExampleValue(arrayLiteral, exampleContext);
     const statusCode = "200";
@@ -1009,6 +1015,34 @@ function extractLaravelAbortResponses(methodBody: string): NormalizedResponse[] 
       },
       example: {
         message,
+      },
+    });
+  }
+
+  return [...responses.values()];
+}
+
+function extractLaravelExceptionResponses(
+  methodBody: string,
+  exampleContext: PhpExampleContext,
+): NormalizedResponse[] {
+  const responses = new Map<string, NormalizedResponse>();
+
+  for (const validationErrors of extractLaravelValidationExceptionExamples(methodBody, exampleContext)) {
+    responses.set("422", {
+      statusCode: "422",
+      description: "Inferred validation exception response",
+      contentType: "application/json",
+      schema: {
+        type: "object",
+        properties: {
+          message: { type: "string" },
+          errors: inferSchemaFromExample(validationErrors),
+        },
+      },
+      example: {
+        message: "The given data was invalid.",
+        errors: validationErrors,
       },
     });
   }
@@ -1303,6 +1337,39 @@ function extractLaravelAbortCalls(methodBody: string): string[] {
   }
 
   return results;
+}
+
+function extractLaravelValidationExceptionExamples(
+  methodBody: string,
+  exampleContext: PhpExampleContext,
+): Record<string, unknown>[] {
+  const examples: Record<string, unknown>[] = [];
+  let offset = 0;
+
+  while (offset < methodBody.length) {
+    const callIndex = methodBody.indexOf("ValidationException::withMessages(", offset);
+    if (callIndex < 0) {
+      break;
+    }
+
+    const openParenIndex = methodBody.indexOf("(", callIndex + "ValidationException::withMessages".length);
+    const argsBlock = openParenIndex >= 0 ? extractBalanced(methodBody, openParenIndex, "(", ")") : null;
+    if (!argsBlock) {
+      break;
+    }
+
+    const firstArg = splitTopLevel(argsBlock.slice(1, -1), ",")[0]?.trim();
+    if (firstArg) {
+      const parsed = parsePhpExampleValue(firstArg, exampleContext);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        examples.push(parsed as Record<string, unknown>);
+      }
+    }
+
+    offset = openParenIndex + argsBlock.length;
+  }
+
+  return examples;
 }
 
 function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParameter[] {

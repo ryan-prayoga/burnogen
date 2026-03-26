@@ -38,7 +38,7 @@ describe("Laravel adapter", () => {
     expect(loginCheck?.responses).toContainEqual(expect.objectContaining({
       statusCode: "422",
       example: {
-        message: "Validation failed",
+        message: "The given data was invalid.",
         errors: {
           email: ["The email field is required."],
         },

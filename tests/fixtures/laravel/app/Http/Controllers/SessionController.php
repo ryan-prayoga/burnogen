@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SessionController extends Controller
 {
@@ -10,12 +11,9 @@ class SessionController extends Controller
     {
         abort_if(!$request->boolean('enabled'), 403, 'Feature disabled');
 
-        return response()->json([
-            'message' => 'Validation failed',
-            'errors' => [
-                'email' => ['The email field is required.'],
-            ],
-        ], 422);
+        throw ValidationException::withMessages([
+            'email' => ['The email field is required.'],
+        ]);
     }
 
     public function store(Request $request)
