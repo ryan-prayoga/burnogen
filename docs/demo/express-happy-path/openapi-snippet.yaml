@@ -11,7 +11,7 @@ paths:
           in: query
           required: false
           schema:
-            type: string
+            type: integer
         - name: X-Trace-Id
           in: header
           required: false
@@ -29,7 +29,7 @@ paths:
                 email:
                   type: string
                 age:
-                  type: string
+                  type: integer
               required:
                 - name
                 - email

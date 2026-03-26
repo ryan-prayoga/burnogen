@@ -809,8 +809,8 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
   const reqName = handlerRecord.params[0] ?? "req";
   const resName = handlerRecord.params[1] ?? "res";
   const exampleContext = createJsExampleContext(handlerRecord.body, reqName);
-  const bodyFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body");
-  const queryFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query");
+  const bodyFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body", exampleContext);
+  const queryFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query", exampleContext);
 
   return {
     requestBody: bodyFields.length > 0 ? {
@@ -980,18 +980,25 @@ function extractObjectFieldsFromRequest(
   body: string,
   reqName: string,
   target: "body" | "query",
+  exampleContext: JsExampleContext,
 ): Array<{ name: string; required: boolean; schema: SchemaObject; }> {
   const fields = new Map<string, { required: boolean; schema: SchemaObject; }>();
 
   for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.${target}(?:\\?\\.|\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)`, "g"))) {
     if (match[1]) {
-      fields.set(match[1], { required: false, schema: { type: "string" } });
+      fields.set(match[1], {
+        required: false,
+        schema: inferExpressRequestFieldSchema(match[1], reqName, target, exampleContext),
+      });
     }
   }
 
   for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`, "g"))) {
     if (match[1]) {
-      fields.set(match[1], { required: false, schema: { type: "string" } });
+      fields.set(match[1], {
+        required: false,
+        schema: inferExpressRequestFieldSchema(match[1], reqName, target, exampleContext),
+      });
     }
   }
 
@@ -1007,9 +1014,9 @@ function extractObjectFieldsFromRequest(
         continue;
       }
 
-      fields.set(field.name, {
+      fields.set(field.sourceName, {
         required: field.required && target === "body",
-        schema: { type: "string" },
+        schema: inferExpressRequestFieldSchema(field.sourceName, reqName, target, exampleContext, field.defaultExpression),
       });
     }
   }
@@ -1021,25 +1028,30 @@ function extractObjectFieldsFromRequest(
   }));
 }
 
-function parseDestructuredField(part: string): { name: string; required: boolean; } | null {
+function parseDestructuredField(part: string): { sourceName: string; localName: string; required: boolean; defaultExpression?: string; } | null {
   const cleaned = part.trim();
   if (!cleaned || cleaned.startsWith("...")) {
     return null;
   }
 
-  const withoutDefault = cleaned.split("=")[0]?.trim();
+  const [rawBinding, rawDefault] = splitOnce(cleaned, "=");
+  const withoutDefault = rawBinding.trim();
   if (!withoutDefault) {
     return null;
   }
 
-  const name = withoutDefault.split(":")[0]?.trim();
-  if (!name || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+  const pieces = withoutDefault.split(":").map((value: string) => value.trim()).filter(Boolean);
+  const sourceName = pieces[0];
+  const localName = pieces[1] ?? sourceName;
+  if (!sourceName || !localName || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(sourceName)) {
     return null;
   }
 
   return {
-    name,
+    sourceName,
+    localName,
     required: !cleaned.includes("="),
+    defaultExpression: rawDefault ? rawDefault.trim() : undefined,
   };
 }
 
@@ -1073,7 +1085,7 @@ function extractExpressHeaders(body: string, reqName: string): NormalizedParamet
     for (const part of splitTopLevel(destructured, ",")) {
       const field = parseDestructuredField(part);
       if (field) {
-        headers.set(field.name.toLowerCase(), headers.get(field.name.toLowerCase()) ?? field.name);
+        headers.set(field.sourceName.toLowerCase(), headers.get(field.sourceName.toLowerCase()) ?? field.sourceName);
       }
     }
   }
@@ -1534,7 +1546,10 @@ function extractJsVariableAssignments(body: string, reqName: string): Map<string
         const accessor = target === "headers"
           ? `${reqName}.headers[${JSON.stringify(parsed.sourceName)}]`
           : `${reqName}.${target}.${parsed.sourceName}`;
-        assignments.set(parsed.localName, accessor);
+        assignments.set(
+          parsed.localName,
+          parsed.defaultExpression ? `${accessor} ?? ${parsed.defaultExpression}` : accessor,
+        );
       }
     }
   }
@@ -1542,25 +1557,32 @@ function extractJsVariableAssignments(body: string, reqName: string): Map<string
   return assignments;
 }
 
-function parseJsDestructuredAssignment(part: string): { sourceName: string; localName: string; } | null {
+function parseJsDestructuredAssignment(
+  part: string,
+): { sourceName: string; localName: string; defaultExpression?: string; } | null {
   const cleaned = part.trim();
   if (!cleaned || cleaned.startsWith("...")) {
     return null;
   }
 
-  const withoutDefault = cleaned.split("=")[0]?.trim();
+  const [rawBinding, rawDefault] = splitOnce(cleaned, "=");
+  const withoutDefault = rawBinding.trim();
   if (!withoutDefault) {
     return null;
   }
 
-  const pieces = withoutDefault.split(":").map((value) => value.trim()).filter(Boolean);
+  const pieces = withoutDefault.split(":").map((value: string) => value.trim()).filter(Boolean);
   const sourceName = pieces[0];
   const localName = pieces[1] ?? sourceName;
   if (!sourceName || !localName) {
     return null;
   }
 
-  return { sourceName, localName };
+  return {
+    sourceName,
+    localName,
+    defaultExpression: rawDefault ? rawDefault.trim() : undefined,
+  };
 }
 
 function resolveJsVariableExample(name: string, context?: JsExampleContext): unknown {
@@ -1586,6 +1608,49 @@ function resolveJsVariableExample(name: string, context?: JsExampleContext): unk
   context.resolving.delete(name);
   context.cache.set(name, resolved);
   return resolved;
+}
+
+function inferExpressRequestFieldSchema(
+  fieldName: string,
+  reqName: string,
+  target: "body" | "query",
+  context: JsExampleContext,
+  defaultExpression?: string,
+): SchemaObject {
+  if (defaultExpression) {
+    const defaultExample = buildExampleFromJsExpression(defaultExpression, context);
+    const inferred = inferSchemaFromJsExample(defaultExample);
+    if (inferred) {
+      return inferred;
+    }
+  }
+
+  for (const expression of context.assignments.values()) {
+    if (!expressionReferencesRequestField(expression, reqName, target, fieldName)) {
+      continue;
+    }
+
+    const inferred = inferSchemaFromJsExample(buildExampleFromJsExpression(expression, context));
+    if (inferred) {
+      return inferred;
+    }
+  }
+
+  return { type: "string" };
+}
+
+function expressionReferencesRequestField(
+  expression: string,
+  reqName: string,
+  target: "body" | "query",
+  fieldName: string,
+): boolean {
+  const patterns = [
+    new RegExp(`${escapeRegExp(reqName)}\\.${target}\\.(${escapeRegExp(fieldName)})\\b`),
+    new RegExp(`${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]${escapeRegExp(fieldName)}["'\`]\\s*\\]`),
+  ];
+
+  return patterns.some((pattern) => pattern.test(expression));
 }
 
 function inferJsRequestAccessorExample(expression: string, context?: JsExampleContext): unknown {
@@ -2120,6 +2185,15 @@ function splitTopLevelSequence(input: string, sequence: string): string[] {
   }
 
   return results.length > 0 ? results : [input.trim()];
+}
+
+function splitOnce(input: string, delimiter: string): [string, string] {
+  const index = input.indexOf(delimiter);
+  if (index < 0) {
+    return [input, ""];
+  }
+
+  return [input.slice(0, index), input.slice(index + delimiter.length)];
 }
 
 function findTopLevelStatementTerminator(input: string, startIndex: number): number {

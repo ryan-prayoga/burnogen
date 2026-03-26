@@ -13,10 +13,12 @@ describe("Express adapter", () => {
     const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users" && endpoint.method === "post");
     expect(createUser?.auth.type).toBe("bearer");
     expect(createUser?.requestBody?.schema.properties?.name?.type).toBe("string");
+    expect(createUser?.requestBody?.schema.properties?.age?.type).toBe("integer");
     expect(createUser?.requestBody?.schema.required).toEqual(expect.arrayContaining(["name", "email"]));
     expect(createUser?.parameters).toContainEqual(expect.objectContaining({
       name: "page",
       in: "query",
+      schema: expect.objectContaining({ type: "integer" }),
     }));
     expect(createUser?.parameters).toContainEqual(expect.objectContaining({
       name: "X-Trace-Id",

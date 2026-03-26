@@ -14,7 +14,7 @@ post {
 }
 
 params:query {
-  page: {{page}}
+  page: 1
 }
 
 headers {
@@ -31,7 +31,7 @@ body:json {
   {
     "name": "",
     "email": "",
-    "age": ""
+    "age": 1
   }
 }
 
@@ -44,7 +44,7 @@ example {
     method: post
     mode: json
     params:query: {
-      page: {{page}}
+      page: 1
     }
 
     headers: {
@@ -57,7 +57,7 @@ example {
       {
         "name": "",
         "email": "",
-        "age": ""
+        "age": 1
       }
     }
   }
