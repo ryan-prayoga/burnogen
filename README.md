@@ -8,9 +8,31 @@ Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it fin
 
 Brunogen is already useful for real codebases that stay close to common framework conventions. Laravel is the strongest path today, with materially richer request and response inference. Express.js and Go support are available and improving, but still more heuristic.
 
-| Laravel | Express | Go |
-| --- | --- | --- |
-| ![Laravel output preview](docs/assets/preview-laravel.png) | ![Express output preview](docs/assets/preview-express.png) | ![Go output preview](docs/assets/preview-go.png) |
+<table>
+  <tr>
+    <td align="center" valign="top">
+      <strong>Laravel</strong><br />
+      <a href="docs/demo/laravel-happy-path/README.md">
+        <img src="docs/assets/preview-laravel.png" alt="Laravel output preview" />
+      </a><br />
+      <sub>FormRequest + Resource response</sub>
+    </td>
+    <td align="center" valign="top">
+      <strong>Express</strong><br />
+      <a href="docs/demo/express-happy-path/README.md">
+        <img src="docs/assets/preview-express.png" alt="Express output preview" />
+      </a><br />
+      <sub>Mounted router + local response helper</sub>
+    </td>
+    <td align="center" valign="top">
+      <strong>Go</strong><br />
+      <a href="docs/demo/go-happy-path/README.md">
+        <img src="docs/assets/preview-go.png" alt="Go output preview" />
+      </a><br />
+      <sub>Gin bind + direct JSON response</sub>
+    </td>
+  </tr>
+</table>
 
 ## What You Get
 
