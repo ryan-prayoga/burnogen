@@ -8,6 +8,8 @@ Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it fin
 
 Brunogen is already useful for real codebases that stay close to common framework conventions. Laravel is the strongest path today, with materially richer request and response inference. Express.js and Go support are available and improving, but still more heuristic.
 
+![Brunogen output preview](docs/assets/readme-output-preview.png)
+
 ## What You Get
 
 - `openapi.yaml` generated directly from your routes, handlers, controllers, and request/response patterns
