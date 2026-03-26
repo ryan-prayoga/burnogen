@@ -71,7 +71,7 @@ const configFiles = [
 ];
 
 export function defaultConfig(): BrunogenConfig {
-  return configSchema.parse({});
+  return structuredClone(configSchema.parse({}));
 }
 
 export async function findConfigFile(cwd: string): Promise<string | null> {
@@ -104,7 +104,7 @@ export async function loadConfig(cwd: string, explicitPath?: string): Promise<{ 
     : parseYaml(rawContent);
 
   return {
-    config: configSchema.parse(parsed),
+    config: structuredClone(configSchema.parse(parsed)),
     configPath,
   };
 }
