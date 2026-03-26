@@ -36,7 +36,7 @@ OpenAPI is the internal source of truth after scanning. Bruno is the output targ
 - Bruno collection generation with environment files, baseline bearer/basic/api-key auth support, and native response `example {}` blocks
 - OpenAPI generation and validation before export
 - Express.js scanning in experimental mode for `express()`/`Router()`, mounted routers, basic handler imports, request access patterns, and variable-backed response inference
-- Go Gin, Fiber, and Echo scanning in experimental mode
+- Go Gin, Fiber, and Echo scanning in experimental mode with stronger direct JSON response inference
 
 ## Laravel-First Quickstart
 
@@ -414,7 +414,7 @@ example {
 | Go request schema inference | Experimental | Works for straightforward bind/body-parser patterns |
 | Laravel response inference | Strong partial | Covers direct arrays, `response()->json(...)`, `noContent()`, same-controller wrapper helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths |
 | Express response inference | Partial | Straightforward `res.json()`, `res.send()`, `res.status(...).json()`, `sendStatus()`, and local helper wrappers |
-| Go response inference | Limited | Response helper inference is still heuristic and often generic |
+| Go response inference | Partial | Covers common direct JSON responses plus existing helper-based patterns, but remains heuristic |
 | Watch mode | Supported | Regenerates on `.php`, `.go`, `.js`, `.cjs`, `.mjs`, and `.ts` changes |
 
 ## Known Limitations
@@ -429,7 +429,7 @@ example {
 - Express request and response inference currently targets straightforward `req.body` / `req.query` / `req.headers` access and local `res.*()` helper wrappers.
 - Go support is intentionally labeled experimental.
 - Go route parsing can miss unusual middleware signatures or custom router abstractions.
-- Go response schemas are best-effort and often generic around nested `data` payloads.
+- Go response schemas are still best-effort around indirect helpers, nested wrappers, and custom response builders.
 - Generated Bruno auth is baseline setup, not a complete auth flow engine.
 
 ## Roadmap
