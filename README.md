@@ -6,11 +6,24 @@ Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it fin
 
 Brunogen is already useful for real codebases that stay close to common framework conventions. Laravel is the strongest path today, with materially richer request and response inference. Express.js and Go support are available and improving, but still more heuristic.
 
-## Install
+## What You Get
+
+- `openapi.yaml` generated directly from your routes, handlers, controllers, and request/response patterns
+- A ready-to-open Bruno collection under `.brunogen/bruno/`
+- Fast feedback on what Brunogen understood well and what it skipped with warnings
+
+## Quick Start
 
 ```bash
 npm i -g brunogen
+brunogen init
+brunogen generate
 ```
+
+Default output:
+
+- `.brunogen/openapi.yaml`
+- `.brunogen/bruno/`
 
 ## How It Works
 
@@ -27,13 +40,12 @@ OpenAPI is the internal source of truth after scanning. Bruno is the output targ
 ## Works Today
 
 - Global CLI with `init`, `generate`, `watch`, `validate`, and `doctor`
-- Laravel route scanning from `routes/*.php`
-- Laravel route groups, prefixes, middleware-based auth hints, and `apiResource` expansion
-- Laravel request schema inference from FormRequest rules, simple inline validation, and common manual request accessors such as `query`, `header`, typed accessors, `has`, `filled`, `safe()->only(...)`, and `enum(...)`
-- Laravel response inference for direct arrays, `response()->json(...)`, `noContent()`, same-controller response helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths
-- Bruno collection generation with environment files, baseline bearer/basic/api-key auth support, and native response `example {}` blocks
+- Laravel route scanning from `routes/*.php`, including groups, prefixes, middleware-based auth hints, and `apiResource` expansion
+- Laravel request inference from FormRequest rules, inline validation, and common manual accessors such as `query`, `header`, typed accessors, `has`, `filled`, `safe()->only(...)`, and `enum(...)`
+- Laravel response inference for direct arrays, `response()->json(...)`, `noContent()`, same-controller helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths
+- Bruno collection generation with environments, baseline bearer/basic/api-key auth support, and native response `example {}` blocks
 - OpenAPI generation and validation before export
-- Express.js scanning in experimental mode for `express()`/`Router()`, mounted routers, basic handler imports, request access patterns, and variable-backed response inference
+- Express.js scanning in experimental mode for mounted routers, straightforward request access patterns, and local response helpers
 - Go Gin, Fiber, and Echo scanning in experimental mode with stronger direct JSON response inference
 
 ## Laravel-First Quickstart
@@ -62,18 +74,6 @@ Generated 6 endpoints.
 OpenAPI: .../tests/fixtures/laravel/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/laravel/.brunogen/bruno
 ```
-
-The normal installed flow is the same:
-
-```bash
-brunogen init
-brunogen generate
-```
-
-Default output:
-
-- `.brunogen/openapi.yaml`
-- `.brunogen/bruno/`
 
 ## Express Quickstart
 
