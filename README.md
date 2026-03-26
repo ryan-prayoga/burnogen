@@ -1,5 +1,7 @@
 # brunogen
 
+[![npm version](https://img.shields.io/npm/v/brunogen)](https://www.npmjs.com/package/brunogen)
+[![node >=20](https://img.shields.io/badge/node-%3E%3D20-2f855a)](https://nodejs.org/)
 [![CI](https://github.com/ryan-prayoga/brunogen/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ryan-prayoga/brunogen/actions/workflows/ci.yml)
 
 Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it finds into OpenAPI, and emits a Bruno collection you can try immediately.
@@ -173,6 +175,27 @@ return res.send("ok");
 return res.sendStatus(204);
 return sendCreated(res, payload);
 return responseHelpers.sendCreated(res, payload);
+```
+
+### Go
+
+Request inference is strongest when handlers use patterns like:
+
+```go
+var req CreateUserRequest
+if err := c.ShouldBindJSON(&req); err != nil { return }
+if err := ctx.Bind(&req); err != nil { return err }
+page := c.Query("page")
+id := c.Param("id")
+token := c.Get("TTOKEN")
+```
+
+Response inference is strongest when handlers use patterns like:
+
+```go
+c.JSON(http.StatusCreated, gin.H{"message": "created", "data": req})
+return ctx.JSON(http.StatusOK, map[string]any{"data": payload})
+return fiberHelper(c, payload)
 ```
 
 ## Example Input Project Shape
