@@ -8,7 +8,7 @@ import packageJson from "../package.json";
 import { loadConfig, renderDefaultConfigFile, resolveFromConfigRoot } from "./core/config";
 import { fileExists, writeTextFile } from "./core/fs";
 import { runDoctor } from "./core/doctor";
-import { formatWarnings, generateArtifacts, validateOpenApi, writeArtifacts } from "./core/pipeline";
+import { collectOpenApiConsistencyWarnings, formatWarnings, generateArtifacts, validateOpenApi, writeArtifacts } from "./core/pipeline";
 
 const program = new Command();
 
@@ -114,6 +114,14 @@ program.command("validate")
     try {
       const artifacts = await generateArtifacts(projectRoot, config);
       await validateOpenApi(artifacts.openApi);
+      const consistencyWarnings = collectOpenApiConsistencyWarnings(artifacts.openApi);
+      if (consistencyWarnings.length > 0) {
+        for (const line of consistencyWarnings) {
+          console.error(line);
+        }
+        process.exitCode = 1;
+        return;
+      }
       console.log(`OpenAPI valid. ${artifacts.normalized.endpoints.length} endpoints scanned.`);
       for (const line of formatWarnings(artifacts.warnings)) {
         console.warn(line);
@@ -166,7 +174,7 @@ async function runGenerate(configFile?: string): Promise<void> {
 async function collectValidationWarnings(openApi: Record<string, unknown>): Promise<string[]> {
   try {
     await validateOpenApi(openApi);
-    return [];
+    return collectOpenApiConsistencyWarnings(openApi);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return [`[OPENAPI_VALIDATION_FAILED] OpenAPI validation failed, but partial artifacts were still written. ${message}`];
