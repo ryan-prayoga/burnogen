@@ -89,7 +89,7 @@ function buildOpenApiSnippet(openApiContent: string): string {
     openapi?: string;
     paths?: Record<string, Record<string, unknown>>;
   };
-  const createUserOperation = openApi.paths?.["/api/users"]?.post as {
+  const createUserOperation = openApi.paths?.["/api/v1/users"]?.post as {
     operationId?: string;
     summary?: string;
     tags?: string[];
@@ -102,7 +102,7 @@ function buildOpenApiSnippet(openApiContent: string): string {
   return stringifyYaml({
     openapi: openApi.openapi,
     paths: {
-      "/api/users": {
+      "/api/v1/users": {
         post: createUserOperation
           ? {
             operationId: createUserOperation.operationId,

@@ -1,26 +1,30 @@
 meta {
   name: createUser
   type: http
-  seq: 2
+  seq: 7
   tags: [
     api
   ]
 }
 
 post {
-  url: {{baseUrl}}/api/users
+  url: {{baseUrl}}/api/v1/users
   body: json
   auth: bearer
 }
 
 params:query {
+  search: {{search}}
   page: 1
+  limit: 1
+  order: {{order}}
 }
 
 headers {
   accept: application/json
   content-type: application/json
   X-Trace-Id: {{X-Trace-Id}}
+  Authorization: {{Authorization}}
 }
 
 auth:bearer {
@@ -29,35 +33,51 @@ auth:bearer {
 
 body:json {
   {
+    "price": 1,
+    "active": true,
     "name": "",
     "email": "",
-    "age": 1
+    "age": 1,
+    "role": "",
+    "tags": [
+      ""
+    ]
   }
 }
 
 example {
   name: "201 Response"
-  description: "Inferred JSON response"
+  description: "Inferred helper response"
 
   request: {
-    url: {{baseUrl}}/api/users
+    url: {{baseUrl}}/api/v1/users
     method: post
     mode: json
     params:query: {
+      search: {{search}}
       page: 1
+      limit: 1
+      order: {{order}}
     }
 
     headers: {
       accept: application/json
       content-type: application/json
       X-Trace-Id: {{X-Trace-Id}}
+      Authorization: {{Authorization}}
     }
 
     body:json: {
       {
+        "price": 1,
+        "active": true,
         "name": "",
         "email": "",
-        "age": 1
+        "age": 1,
+        "role": "",
+        "tags": [
+          ""
+        ]
       }
     }
   }
@@ -76,14 +96,142 @@ example {
       type: json
       content: '''
         {
-          "message": "user created",
+          "success": true,
           "data": {
             "id": 1,
             "name": "Jane Doe",
             "email": "user@example.com",
             "age": 18,
+            "role": "user",
             "page": 1,
-            "traceId": "trace_123"
+            "limit": 10,
+            "search": "search",
+            "order": "asc",
+            "price": 1.5,
+            "active": true,
+            "tags": [],
+            "traceId": "trace_123",
+            "authorization": "Bearer token"
+          }
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: "409 Response"
+  description: "Inferred helper response"
+
+  request: {
+    url: {{baseUrl}}/api/v1/users
+    method: post
+    mode: json
+    params:query: {
+      search: {{search}}
+      page: 1
+      limit: 1
+      order: {{order}}
+    }
+
+    headers: {
+      accept: application/json
+      content-type: application/json
+      X-Trace-Id: {{X-Trace-Id}}
+      Authorization: {{Authorization}}
+    }
+
+    body:json: {
+      {
+        "price": 1,
+        "active": true,
+        "name": "",
+        "email": "",
+        "age": 1,
+        "role": "",
+        "tags": [
+          ""
+        ]
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 409
+      text: Conflict
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "success": false,
+          "error": "Email already exists"
+        }
+      '''
+    }
+  }
+}
+
+example {
+  name: "422 Response"
+  description: "Inferred helper response"
+
+  request: {
+    url: {{baseUrl}}/api/v1/users
+    method: post
+    mode: json
+    params:query: {
+      search: {{search}}
+      page: 1
+      limit: 1
+      order: {{order}}
+    }
+
+    headers: {
+      accept: application/json
+      content-type: application/json
+      X-Trace-Id: {{X-Trace-Id}}
+      Authorization: {{Authorization}}
+    }
+
+    body:json: {
+      {
+        "price": 1,
+        "active": true,
+        "name": "",
+        "email": "",
+        "age": 1,
+        "role": "",
+        "tags": [
+          ""
+        ]
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 422
+      text: "Unprocessable Entity"
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "errors": {
+            "name": "required",
+            "email": "required"
           }
         }
       '''

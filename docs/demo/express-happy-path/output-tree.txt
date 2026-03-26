@@ -3,8 +3,18 @@
   bruno/
     bruno.json
     api/
+      createadminuser.bru
       createuser.bru
+      deleteprofile.bru
+      getme.bru
+      getprofile.bru
+      getuserpost.bru
+      impersonateuser.bru
+      listadminusers.bru
       login.bru
+      logout.bru
+      register.bru
       showuser.bru
+      updateprofile.bru
     environments/
       local.bru

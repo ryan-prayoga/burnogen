@@ -1,18 +1,38 @@
 openapi: 3.1.0
 paths:
-  /api/users:
+  /api/v1/users:
     post:
       operationId: createUser
-      summary: POST /api/users
+      summary: POST /api/v1/users
       tags:
         - api
       parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
         - name: page
           in: query
           required: false
           schema:
             type: integer
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
         - name: X-Trace-Id
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: Authorization
           in: header
           required: false
           schema:
@@ -24,25 +44,35 @@ paths:
             schema:
               type: object
               properties:
+                price:
+                  type: number
+                active:
+                  type: boolean
                 name:
                   type: string
                 email:
                   type: string
                 age:
                   type: integer
+                role:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
               required:
                 - name
                 - email
       responses:
         "201":
-          description: Inferred JSON response
+          description: Inferred helper response
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  message:
-                    type: string
+                  success:
+                    type: boolean
                   data:
                     type: object
                     properties:
@@ -54,18 +84,76 @@ paths:
                         type: string
                       age:
                         type: integer
+                      role:
+                        type: string
                       page:
                         type: integer
+                      limit:
+                        type: integer
+                      search:
+                        type: string
+                      order:
+                        type: string
+                      price:
+                        type: number
+                      active:
+                        type: boolean
+                      tags:
+                        type: array
+                        items:
+                          type: string
                       traceId:
                         type: string
+                      authorization:
+                        type: string
               example:
-                message: user created
+                success: true
                 data:
                   id: 1
                   name: Jane Doe
                   email: user@example.com
                   age: 18
+                  role: user
                   page: 1
+                  limit: 10
+                  search: search
+                  order: asc
+                  price: 1.5
+                  active: true
+                  tags: []
                   traceId: trace_123
+                  authorization: Bearer token
+        "409":
+          description: Inferred helper response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  error:
+                    type: string
+              example:
+                success: false
+                error: Email already exists
+        "422":
+          description: Inferred helper response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      email:
+                        type: string
+              example:
+                errors:
+                  name: required
+                  email: required
       security:
         - bearerAuth: []

@@ -5,15 +5,19 @@ import { generateArtifacts } from "../src/core/pipeline";
 import { fixturePath } from "./helpers";
 
 describe("Express adapter", () => {
-  it("detects Express routes and request schemas", async () => {
+  it("detects nested Express routes, request schemas, auth, and helper responses", async () => {
     const artifacts = await generateArtifacts(fixturePath("express"), defaultConfig());
     expect(artifacts.normalized.framework).toBe("express");
     expect(artifacts.normalized.projectName).toBe("acme/express-demo");
+    expect(artifacts.normalized.endpoints.length).toBeGreaterThanOrEqual(10);
 
-    const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users" && endpoint.method === "post");
+    const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/v1/users" && endpoint.method === "post");
     expect(createUser?.auth.type).toBe("bearer");
     expect(createUser?.requestBody?.schema.properties?.name?.type).toBe("string");
     expect(createUser?.requestBody?.schema.properties?.age?.type).toBe("integer");
+    expect(createUser?.requestBody?.schema.properties?.price?.type).toBe("number");
+    expect(createUser?.requestBody?.schema.properties?.active?.type).toBe("boolean");
+    expect(createUser?.requestBody?.schema.properties?.tags?.type).toBe("array");
     expect(createUser?.requestBody?.schema.required).toEqual(expect.arrayContaining(["name", "email"]));
     expect(createUser?.parameters).toContainEqual(expect.objectContaining({
       name: "page",
@@ -24,23 +28,32 @@ describe("Express adapter", () => {
       name: "X-Trace-Id",
       in: "header",
     }));
-    expect(createUser?.parameters.filter((parameter) => parameter.in === "header")).toHaveLength(1);
+    expect(createUser?.parameters).toContainEqual(expect.objectContaining({
+      name: "Authorization",
+      in: "header",
+    }));
     expect(createUser?.responses).toContainEqual(expect.objectContaining({
       statusCode: "201",
       example: {
-        message: "user created",
-        data: {
+        success: true,
+        data: expect.objectContaining({
           id: 1,
           name: "Jane Doe",
           email: "user@example.com",
           age: 18,
           page: 1,
+          limit: 10,
+          price: 1.5,
+          active: true,
+          tags: [],
           traceId: "trace_123",
-        },
+          authorization: "Bearer token",
+        }),
       },
     }));
+    expect(createUser?.responses.map((response) => response.statusCode).sort()).toEqual(expect.arrayContaining(["201", "409", "422"]));
 
-    const showUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users/{id}" && endpoint.method === "get");
+    const showUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/v1/users/{id}" && endpoint.method === "get");
     expect(showUser?.parameters).toContainEqual(expect.objectContaining({
       name: "id",
       in: "path",
@@ -48,14 +61,16 @@ describe("Express adapter", () => {
     expect(showUser?.responses).toContainEqual(expect.objectContaining({
       statusCode: "200",
       example: {
-        data: {
+        data: expect.objectContaining({
           id: 1,
           name: "Jane Doe",
-        },
+        }),
       },
     }));
+    expect(showUser?.responses.map((response) => response.statusCode)).toContain("404");
 
-    const login = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/sessions" && endpoint.method === "post");
+    const login = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/auth/login" && endpoint.method === "post");
+    expect(login?.auth.type).toBe("none");
     expect(login?.requestBody?.schema.required).toEqual(expect.arrayContaining(["email", "password"]));
     expect(login?.responses).toContainEqual(expect.objectContaining({
       statusCode: "200",
@@ -65,6 +80,17 @@ describe("Express adapter", () => {
         password: "secret123",
       },
     }));
+
+    const userPost = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/v1/users/{id}/posts/{postId}" && endpoint.method === "get");
+    expect(userPost?.auth.type).toBe("bearer");
+    expect(userPost?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "id", in: "path" }),
+      expect.objectContaining({ name: "postId", in: "path" }),
+    ]));
+
+    const adminListUsers = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/admin/users" && endpoint.method === "get");
+    expect(adminListUsers?.auth.type).toBe("bearer");
+
     expect(artifacts.warnings).not.toContainEqual(expect.objectContaining({
       code: "EXPRESS_HANDLER_NOT_FOUND",
     }));

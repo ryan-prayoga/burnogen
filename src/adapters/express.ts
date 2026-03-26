@@ -390,7 +390,7 @@ function parseExports(file: ExpressFile): FileExports {
 function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
   const records: ExpressFunctionRecord[] = [];
 
-  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{/g)) {
+  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[\s\S]*?>\s*)?\(([^)]*)\)\s*\{/g)) {
     const name = match[1];
     const params = match[2];
     const fullMatch = match[0];
@@ -431,6 +431,22 @@ function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
       name,
       params: parseParamList(params),
       body: block,
+    });
+  }
+
+  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\{)([^;]+);/g)) {
+    const name = match[1];
+    const params = match[2];
+    const expression = match[3];
+    if (!name || params === undefined || !expression) {
+      continue;
+    }
+
+    records.push({
+      filePath: file.filePath,
+      name,
+      params: parseParamList(params),
+      body: `{ return ${expression.trim()}; }`,
     });
   }
 
@@ -594,7 +610,7 @@ function findMethodCalls(
   method: string,
 ): Array<{ args: string; line: number; endIndex: number; }> {
   const results: Array<{ args: string; line: number; endIndex: number; }> = [];
-  const regex = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\.\\s*${method}\\s*\\(`, "g");
+  const regex = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\.\\s*${method}\\s*(?:<[\\s\\S]*?>\\s*)?\\(`, "g");
 
   for (const match of content.matchAll(regex)) {
     const startIndex = match.index ?? 0;
@@ -634,7 +650,7 @@ function findRouteChainCalls(
 
     while (cursor < content.length) {
       const remainder = content.slice(cursor);
-      const chainedMatch = remainder.match(/^\s*\.\s*(get|post|put|patch|delete|head|options)\s*\(/i);
+      const chainedMatch = remainder.match(/^\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[\s\S]*?>\s*)?\(/i);
       if (!chainedMatch?.[1]) {
         break;
       }
@@ -792,7 +808,9 @@ function collectRouterEndpoints(input: {
 
 function analyzeExpressHandler(handlerExpression: string, filePath: string, index: ProjectIndex): HandlerAnalysis {
   const inlineHandler = parseInlineHandler(handlerExpression);
-  const handlerRecord = inlineHandler ?? resolveHandlerReference(handlerExpression, filePath, index);
+  const handlerRecord = inlineHandler
+    ? { ...inlineHandler, filePath }
+    : resolveHandlerReference(handlerExpression, filePath, index);
 
   if (!handlerRecord) {
     return {
@@ -801,7 +819,7 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
       responses: [],
       warnings: [{
         code: "EXPRESS_HANDLER_NOT_FOUND",
-        message: `Could not locate handler ${handlerExpression} while inferring Express request schema.`,
+        message: `Express: skipped handler '${handlerExpression}' because the reference could not be resolved for request/response inference.`,
       }],
     };
   }
@@ -895,6 +913,13 @@ function resolveHandlerReference(
     if (importedRecord) {
       return importedRecord;
     }
+
+    const globalCandidates = [...index.functions.entries()]
+      .filter(([key]) => key.endsWith(`::${trimmed}`))
+      .map(([, record]) => record);
+    if (globalCandidates.length === 1) {
+      return globalCandidates[0];
+    }
   }
 
   return null;
@@ -958,10 +983,29 @@ function resolveRouterExpression(
   localRouterNames: Set<string>,
 ): string | null {
   const trimmed = expression.trim();
+  const memberMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/);
+
+  if (memberMatch?.[1] && memberMatch[2]) {
+    const binding = index.imports.get(filePath)?.get(memberMatch[1]);
+    const targetExports = binding ? index.exports.get(binding.sourceFile) : undefined;
+    const exportedExpression = targetExports?.defaultObject?.[memberMatch[2]] ?? targetExports?.named.get(memberMatch[2]);
+    if (binding?.sourceFile && exportedExpression && fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
+      return createRouterKey(binding.sourceFile, exportedExpression);
+    }
+  }
 
   const binding = index.imports.get(filePath)?.get(trimmed);
   if (binding?.kind === "default") {
     const exportedExpression = index.exports.get(binding.sourceFile)?.defaultExpression;
+    if (!exportedExpression || !fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
+      return null;
+    }
+
+    return createRouterKey(binding.sourceFile, exportedExpression);
+  }
+
+  if (binding?.kind === "named") {
+    const exportedExpression = index.exports.get(binding.sourceFile)?.named.get(binding.importedName ?? trimmed) ?? binding.importedName;
     if (!exportedExpression || !fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
       return null;
     }
@@ -1108,18 +1152,35 @@ function extractExpressResponses(
   const body = handlerRecord.body;
   const responses = new Map<string, NormalizedResponse>();
 
-  const statusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*status\\s*\\(\\s*(\\d{3})\\s*\\)\\s*\\.\\s*(json|send)\\s*\\(`, "g");
+  const statusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*status\\s*\\(`, "g");
   for (const match of body.matchAll(statusRegex)) {
-    const statusCode = match[1];
-    const method = match[2];
-    const startIndex = match.index ?? 0;
-    const openParenIndex = body.indexOf("(", startIndex + match[0].length - 1);
-    const argsBlock = openParenIndex >= 0 ? extractBalanced(body, openParenIndex, "(", ")") : null;
-    if (!statusCode || !method || !argsBlock) {
+    const statusStart = match.index ?? 0;
+    const statusOpenParen = body.indexOf("(", statusStart);
+    const statusArgs = statusOpenParen >= 0 ? extractBalanced(body, statusOpenParen, "(", ")") : null;
+    if (!statusArgs) {
       continue;
     }
 
-    responses.set(statusCode, buildExpressResponse(statusCode, argsBlock.slice(1, -1), method, exampleContext));
+    const statusCode = normalizeExpressStatusCodeExpression(statusArgs.slice(1, -1), exampleContext);
+    if (!statusCode) {
+      continue;
+    }
+
+    const cursor = statusOpenParen + statusArgs.length;
+    const remainder = body.slice(cursor);
+    const responseMatch = remainder.match(/^\s*\.\s*(json|send)\s*\(/);
+    if (!responseMatch?.[1]) {
+      continue;
+    }
+
+    const method = responseMatch[1];
+    const responseOpenParen = body.indexOf("(", cursor);
+    const responseArgs = responseOpenParen >= 0 ? extractBalanced(body, responseOpenParen, "(", ")") : null;
+    if (!responseArgs) {
+      continue;
+    }
+
+    responses.set(statusCode, buildExpressResponse(statusCode, responseArgs.slice(1, -1), method, exampleContext));
   }
 
   const defaultRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*(json|send)\\s*\\(`, "g");
@@ -1200,6 +1261,11 @@ function extractExpressHelperResponses(
       continue;
     }
 
+    const conventionalResponse = inferExpressConventionalHelperResponse(helperCall, exampleContext);
+    if (conventionalResponse) {
+      responses.push(conventionalResponse);
+    }
+
     const helperRecord = resolveHandlerReference(helperCall.expression, handlerRecord.filePath, index)
       ?? index.functions.get(createFunctionKey(handlerRecord.filePath, helperCall.expression));
     if (!helperRecord) {
@@ -1210,7 +1276,7 @@ function extractExpressHelperResponses(
     helperRecord.params.forEach((paramName, index) => {
       const argExpression = helperCall.args[index];
       if (paramName && argExpression) {
-        seedAssignments.set(paramName, argExpression);
+        seedAssignments.set(paramName, materializeJsArgumentExpression(argExpression, exampleContext));
       }
     });
 
@@ -1223,6 +1289,81 @@ function extractExpressHelperResponses(
   }
 
   return dedupeResponsesByStatusCode(responses);
+}
+
+function inferExpressConventionalHelperResponse(
+  helperCall: { expression: string; args: string[]; },
+  exampleContext: JsExampleContext,
+): NormalizedResponse | undefined {
+  const helperName = helperCall.expression.split(".").pop()?.toLowerCase() ?? "";
+  if (!helperName) {
+    return undefined;
+  }
+
+  if (helperName.includes("validation")) {
+    const errors = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    return buildExpressResponseFromExample("422", {
+      errors,
+    });
+  }
+
+  if (helperName.includes("conflict")) {
+    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Conflict";
+    return buildExpressResponseFromExample("409", {
+      success: false,
+      error,
+    });
+  }
+
+  if (helperName.includes("notfound")) {
+    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Not found";
+    return buildExpressResponseFromExample("404", {
+      success: false,
+      error,
+    });
+  }
+
+  if (helperName.includes("created")) {
+    const data = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    return buildExpressResponseFromExample("201", {
+      success: true,
+      data,
+    });
+  }
+
+  if (helperName.includes("success")) {
+    const data = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    const statusCode = helperCall.args[2]
+      ? normalizeExpressStatusCodeExpression(helperCall.args[2], exampleContext)
+      : "200";
+    return buildExpressResponseFromExample(statusCode ?? "200", {
+      success: true,
+      data,
+    });
+  }
+
+  if (helperName.includes("error")) {
+    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Error";
+    const statusCode = helperCall.args[2]
+      ? normalizeExpressStatusCodeExpression(helperCall.args[2], exampleContext)
+      : "400";
+    return buildExpressResponseFromExample(statusCode ?? "400", {
+      success: false,
+      error,
+    });
+  }
+
+  return undefined;
+}
+
+function buildExpressResponseFromExample(statusCode: string, example: unknown): NormalizedResponse {
+  return {
+    statusCode,
+    description: "Inferred helper response",
+    contentType: "application/json",
+    schema: inferSchemaFromJsExample(example),
+    example,
+  };
 }
 
 function parseExpressHelperReturnStatement(
@@ -1345,8 +1486,45 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
     return undefined;
   }
 
+  const parsedInteger = trimmed.match(/^(?:Number\.)?parseInt\((.+?)(?:,\s*\d+)?\)$/);
+  if (parsedInteger?.[1]) {
+    const resolved = buildExampleFromJsExpression(parsedInteger[1], context);
+    return typeof resolved === "number" ? Math.trunc(resolved) : 1;
+  }
+
+  const parsedFloat = trimmed.match(/^(?:Number\.)?parseFloat\((.+)\)$/);
+  if (parsedFloat?.[1]) {
+    const resolved = buildExampleFromJsExpression(parsedFloat[1], context);
+    return typeof resolved === "number" ? resolved : 1.5;
+  }
+
+  const numericCast = trimmed.match(/^Number\((.+)\)$/);
+  if (numericCast?.[1]) {
+    const resolved = buildExampleFromJsExpression(numericCast[1], context);
+    return typeof resolved === "number" ? resolved : 1;
+  }
+
+  const booleanCast = trimmed.match(/^Boolean\((.+)\)$/);
+  if (booleanCast?.[1]) {
+    return Boolean(buildExampleFromJsExpression(booleanCast[1], context));
+  }
+
+  if (isBooleanComparisonExpression(trimmed)) {
+    const normalized = trimmed.toLowerCase();
+    if (normalized.includes("false")) {
+      return false;
+    }
+
+    return true;
+  }
+
   const nullishOperands = splitTopLevelSequence(trimmed, "??");
   if (nullishOperands.length > 1) {
+    const structuralFallback = selectStructuredFallbackOperand(nullishOperands, context);
+    if (structuralFallback) {
+      return buildExampleFromJsExpression(structuralFallback, context);
+    }
+
     for (const operand of nullishOperands) {
       const resolved = buildExampleFromJsExpression(operand, context);
       if (resolved !== undefined && resolved !== null && resolved !== "") {
@@ -1358,6 +1536,11 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
 
   const fallbackOperands = splitTopLevelSequence(trimmed, "||");
   if (fallbackOperands.length > 1) {
+    const structuralFallback = selectStructuredFallbackOperand(fallbackOperands, context);
+    if (structuralFallback) {
+      return buildExampleFromJsExpression(structuralFallback, context);
+    }
+
     for (const operand of fallbackOperands) {
       const resolved = buildExampleFromJsExpression(operand, context);
       if (resolved !== undefined && resolved !== null && resolved !== "") {
@@ -1430,6 +1613,15 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
   return "";
 }
 
+function materializeJsArgumentExpression(expression: string, context?: JsExampleContext): string {
+  const example = buildExampleFromJsExpression(expression, context);
+  if (example === undefined || example === "") {
+    return expression;
+  }
+
+  return serializeJsExample(example);
+}
+
 function inferSchemaFromJsExample(example: unknown): SchemaObject | undefined {
   if (example === undefined) {
     return undefined;
@@ -1463,6 +1655,26 @@ function inferSchemaFromJsExample(example: unknown): SchemaObject | undefined {
     default:
       return { type: "string" };
   }
+}
+
+function serializeJsExample(example: unknown): string {
+  if (example === null) {
+    return "null";
+  }
+
+  if (typeof example === "string") {
+    return JSON.stringify(example);
+  }
+
+  if (typeof example === "number" || typeof example === "boolean") {
+    return String(example);
+  }
+
+  if (Array.isArray(example) || typeof example === "object") {
+    return JSON.stringify(example);
+  }
+
+  return '""';
 }
 
 function parseObjectLiteralEntry(entry: string): { key: string; value: string; } | null {
@@ -1749,8 +1961,20 @@ function buildJsFieldExample(
     return 1;
   }
 
+  if (normalized === "limit" || normalized.endsWith("_limit")) {
+    return 10;
+  }
+
   if (normalized.includes("password")) {
     return "secret123";
+  }
+
+  if (normalized === "role") {
+    return "user";
+  }
+
+  if (source === "query" && normalized === "order") {
+    return "asc";
   }
 
   if (normalized.includes("token")) {
@@ -1770,7 +1994,7 @@ function buildJsFieldExample(
 
 function inferAuthFromMiddleware(middleware: string[]): NormalizedAuth {
   const joined = middleware.join(" ");
-  if (/auth|jwt|token|bearer|oauth|protected|guard/i.test(joined)) {
+  if (/auth|jwt|token|bearer|oauth|protected|guard|verify|authenticated/i.test(joined)) {
     return { type: "bearer" };
   }
 
@@ -1847,10 +2071,46 @@ function joinRoutePath(prefix: string, rawPath: string): string {
 
 function parseParamList(rawParams: string): string[] {
   return splitTopLevel(rawParams, ",")
-    .map((parameter) => parameter.trim())
+    .map((parameter) => parameter.trim().replace(/^\.\.\./, ""))
     .filter(Boolean)
-    .map((parameter) => parameter.replace(/^[{[]|[}\]]$/g, "").trim())
+    .map((parameter) => {
+      const withoutDefault = splitOnce(parameter, "=")[0]?.trim() ?? parameter;
+      const separatorIndex = findTopLevelSeparator(withoutDefault, ":");
+      const candidate = separatorIndex >= 0 ? withoutDefault.slice(0, separatorIndex) : withoutDefault;
+      return candidate.replace(/^[{[]|[}\]]$/g, "").trim();
+    })
     .filter((parameter) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(parameter));
+}
+
+function normalizeExpressStatusCodeExpression(expression: string, context: JsExampleContext): string | undefined {
+  const trimmed = expression.trim();
+  if (/^\d{3}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const resolved = buildExampleFromJsExpression(trimmed, context);
+  if (typeof resolved === "number" && Number.isInteger(resolved) && resolved >= 100 && resolved <= 599) {
+    return String(resolved);
+  }
+
+  return undefined;
+}
+
+function isBooleanComparisonExpression(expression: string): boolean {
+  return /===\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression)
+    || /!==\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression);
+}
+
+function selectStructuredFallbackOperand(
+  operands: string[],
+  context?: JsExampleContext,
+): string | undefined {
+  const hasRequestOperand = operands.some((operand) => inferJsRequestAccessorExample(operand.trim(), context) !== undefined);
+  if (!hasRequestOperand) {
+    return undefined;
+  }
+
+  return operands.find((operand) => /^[\[{]/.test(operand.trim()));
 }
 
 function resolveLocalModule(fromFile: string, specifier: string, knownFiles: Set<string>): string | null {
