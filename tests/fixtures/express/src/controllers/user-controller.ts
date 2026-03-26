@@ -1,19 +1,16 @@
 // @ts-nocheck
 export async function createUser(req, res) {
-  const { name, email, age } = req.body;
-  const page = req.query.page;
-  const traceId = req.get("X-Trace-Id");
+  const { name, email, age = 18 } = req.body;
+  const { page: currentPage = 1 } = req.query;
+  const traceId = req.headers["x-trace-id"] ?? req.get("X-Trace-Id");
 
-  return res.status(201).json({
-    message: "user created",
-    data: {
-      id: 1,
-      name,
-      email,
-      age,
-      page,
-      traceId,
-    },
+  return sendCreated(res, {
+    id: 1,
+    name,
+    email,
+    age,
+    page: currentPage,
+    traceId,
   });
 }
 
@@ -25,5 +22,12 @@ export function showUser(req, res) {
       id,
       name: "Jane Doe",
     },
+  });
+}
+
+function sendCreated(res, payload) {
+  return res.status(201).json({
+    message: "user created",
+    data: payload,
   });
 }

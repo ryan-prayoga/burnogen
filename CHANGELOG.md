@@ -5,6 +5,8 @@
 - Broaden Laravel manual request inference for `has`, `filled`, `safe()->only([...])`, and `enum(...)`
 - Infer Laravel responses through same-controller wrapper helpers and `findOrFail` / `firstOrFail` not-found paths
 - Extend Laravel fixture coverage for richer request and response stabilization cases
+- Improve Express request and response inference for variable-backed payloads, header access, and same-file helper wrappers
+- Add explicit supported-pattern guidance for Laravel and Express in the README
 
 ## v0.2.0
 

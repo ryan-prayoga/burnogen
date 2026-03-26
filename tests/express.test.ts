@@ -13,7 +13,7 @@ describe("Express adapter", () => {
     const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users" && endpoint.method === "post");
     expect(createUser?.auth.type).toBe("bearer");
     expect(createUser?.requestBody?.schema.properties?.name?.type).toBe("string");
-    expect(createUser?.requestBody?.schema.required).toEqual(expect.arrayContaining(["name", "email", "age"]));
+    expect(createUser?.requestBody?.schema.required).toEqual(expect.arrayContaining(["name", "email"]));
     expect(createUser?.parameters).toContainEqual(expect.objectContaining({
       name: "page",
       in: "query",
@@ -24,6 +24,17 @@ describe("Express adapter", () => {
     }));
     expect(createUser?.responses).toContainEqual(expect.objectContaining({
       statusCode: "201",
+      example: {
+        message: "user created",
+        data: {
+          id: 1,
+          name: "Jane Doe",
+          email: "user@example.com",
+          age: 18,
+          page: 1,
+          traceId: "trace_123",
+        },
+      },
     }));
 
     const showUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/users/{id}" && endpoint.method === "get");
@@ -31,9 +42,26 @@ describe("Express adapter", () => {
       name: "id",
       in: "path",
     }));
+    expect(showUser?.responses).toContainEqual(expect.objectContaining({
+      statusCode: "200",
+      example: {
+        data: {
+          id: 1,
+          name: "Jane Doe",
+        },
+      },
+    }));
 
     const login = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/sessions" && endpoint.method === "post");
     expect(login?.requestBody?.schema.required).toEqual(expect.arrayContaining(["email", "password"]));
+    expect(login?.responses).toContainEqual(expect.objectContaining({
+      statusCode: "200",
+      example: {
+        token: "secret-token",
+        email: "user@example.com",
+        password: "secret123",
+      },
+    }));
     expect(artifacts.warnings).not.toContainEqual(expect.objectContaining({
       code: "EXPRESS_HANDLER_NOT_FOUND",
     }));

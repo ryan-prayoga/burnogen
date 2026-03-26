@@ -72,6 +72,13 @@ interface HandlerAnalysis {
   warnings: GenerationWarning[];
 }
 
+interface JsExampleContext {
+  reqName: string;
+  assignments: Map<string, string>;
+  cache: Map<string, unknown>;
+  resolving: Set<string>;
+}
+
 interface ProjectIndex {
   files: Map<string, ExpressFile>;
   imports: Map<string, Map<string, ImportBinding>>;
@@ -801,6 +808,7 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
 
   const reqName = handlerRecord.params[0] ?? "req";
   const resName = handlerRecord.params[1] ?? "res";
+  const exampleContext = createJsExampleContext(handlerRecord.body, reqName);
   const bodyFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body");
   const queryFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query");
 
@@ -820,7 +828,7 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
       schema: field.schema,
     })),
     headerParameters: extractExpressHeaders(handlerRecord.body, reqName),
-    responses: extractExpressResponses(handlerRecord.body, resName),
+    responses: extractExpressResponses(handlerRecord, resName, exampleContext, index),
     warnings: [],
   };
 }
@@ -1050,6 +1058,26 @@ function extractExpressHeaders(body: string, reqName: string): NormalizedParamet
     }
   }
 
+  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)`, "g"))) {
+    if (match[1]) {
+      headers.add(match[1]);
+    }
+  }
+
+  for (const match of body.matchAll(new RegExp(`(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.headers\\b`, "g"))) {
+    const destructured = match[1];
+    if (!destructured) {
+      continue;
+    }
+
+    for (const part of splitTopLevel(destructured, ",")) {
+      const field = parseDestructuredField(part);
+      if (field) {
+        headers.add(field.name);
+      }
+    }
+  }
+
   return [...headers].map((name) => ({
     name,
     in: "header",
@@ -1058,7 +1086,14 @@ function extractExpressHeaders(body: string, reqName: string): NormalizedParamet
   }));
 }
 
-function extractExpressResponses(body: string, resName: string): NormalizedResponse[] {
+function extractExpressResponses(
+  handlerRecord: ExpressFunctionRecord,
+  resName: string,
+  exampleContext: JsExampleContext,
+  index: ProjectIndex,
+  depth = 0,
+): NormalizedResponse[] {
+  const body = handlerRecord.body;
   const responses = new Map<string, NormalizedResponse>();
 
   const statusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*status\\s*\\(\\s*(\\d{3})\\s*\\)\\s*\\.\\s*(json|send)\\s*\\(`, "g");
@@ -1072,7 +1107,7 @@ function extractExpressResponses(body: string, resName: string): NormalizedRespo
       continue;
     }
 
-    responses.set(statusCode, buildExpressResponse(statusCode, argsBlock.slice(1, -1), method));
+    responses.set(statusCode, buildExpressResponse(statusCode, argsBlock.slice(1, -1), method, exampleContext));
   }
 
   const defaultRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*(json|send)\\s*\\(`, "g");
@@ -1090,7 +1125,7 @@ function extractExpressResponses(body: string, resName: string): NormalizedRespo
       continue;
     }
 
-    responses.set("200", buildExpressResponse("200", argsBlock.slice(1, -1), method));
+    responses.set("200", buildExpressResponse("200", argsBlock.slice(1, -1), method, exampleContext));
   }
 
   const sendStatusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*sendStatus\\s*\\(\\s*(\\d{3})\\s*\\)`, "g");
@@ -1104,13 +1139,30 @@ function extractExpressResponses(body: string, resName: string): NormalizedRespo
     }
   }
 
+  if (depth < 2) {
+    for (const helperResponse of extractExpressHelperResponses(handlerRecord, resName, exampleContext, index, depth)) {
+      if (!responses.has(helperResponse.statusCode)) {
+        responses.set(helperResponse.statusCode, helperResponse);
+      }
+    }
+  }
+
   return [...responses.values()];
 }
 
-function buildExpressResponse(statusCode: string, rawArgs: string, method: string): NormalizedResponse {
+function buildExpressResponse(
+  statusCode: string,
+  rawArgs: string,
+  method: string,
+  exampleContext: JsExampleContext,
+): NormalizedResponse {
   const firstArg = splitTopLevel(rawArgs, ",")[0]?.trim();
-  const schema = firstArg ? inferSchemaFromJsExpression(firstArg) : undefined;
-  const example = firstArg ? buildExampleFromJsExpression(firstArg) : undefined;
+  const example = firstArg ? buildExampleFromJsExpression(firstArg, exampleContext) : undefined;
+  const schema = example !== undefined
+    ? inferSchemaFromJsExample(example)
+    : firstArg
+      ? inferSchemaFromJsExpression(firstArg)
+      : undefined;
 
   return {
     statusCode,
@@ -1119,6 +1171,99 @@ function buildExpressResponse(statusCode: string, rawArgs: string, method: strin
     schema,
     example,
   };
+}
+
+function extractExpressHelperResponses(
+  handlerRecord: ExpressFunctionRecord,
+  resName: string,
+  exampleContext: JsExampleContext,
+  index: ProjectIndex,
+  depth: number,
+): NormalizedResponse[] {
+  const responses: NormalizedResponse[] = [];
+
+  for (const statement of extractReturnStatements(handlerRecord.body)) {
+    const helperCall = parseExpressHelperReturnStatement(statement);
+    if (!helperCall) {
+      continue;
+    }
+
+    const helperRecord = index.functions.get(createFunctionKey(handlerRecord.filePath, helperCall.name));
+    if (!helperRecord) {
+      continue;
+    }
+
+    const seedAssignments = new Map(exampleContext.assignments);
+    helperRecord.params.forEach((paramName, index) => {
+      const argExpression = helperCall.args[index];
+      if (paramName && argExpression) {
+        seedAssignments.set(paramName, argExpression);
+      }
+    });
+
+    const helperReqName = helperRecord.params.find((paramName, index) => helperCall.args[index]?.trim() === exampleContext.reqName)
+      ?? exampleContext.reqName;
+    const helperResName = helperRecord.params.find((paramName, index) => helperCall.args[index]?.trim() === resName)
+      ?? resName;
+    const helperContext = createJsExampleContext(helperRecord.body, helperReqName, seedAssignments);
+    responses.push(...extractExpressResponses(helperRecord, helperResName, helperContext, index, depth + 1));
+  }
+
+  return dedupeResponsesByStatusCode(responses);
+}
+
+function parseExpressHelperReturnStatement(
+  statement: string,
+): { name: string; args: string[]; } | undefined {
+  const match = statement.match(/^return\s+(?:await\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const openParenIndex = statement.indexOf("(", match[0].length - 1);
+  const argsBlock = openParenIndex >= 0 ? extractBalanced(statement, openParenIndex, "(", ")") : null;
+  if (!argsBlock) {
+    return undefined;
+  }
+
+  return {
+    name: match[1],
+    args: splitTopLevel(argsBlock.slice(1, -1), ","),
+  };
+}
+
+function extractReturnStatements(body: string): string[] {
+  const statements: string[] = [];
+  let offset = 0;
+
+  while (offset < body.length) {
+    const returnIndex = body.indexOf("return", offset);
+    if (returnIndex < 0) {
+      break;
+    }
+
+    const statementEnd = findTopLevelStatementTerminator(body, returnIndex);
+    if (statementEnd < 0) {
+      break;
+    }
+
+    statements.push(body.slice(returnIndex, statementEnd + 1).trim());
+    offset = statementEnd + 1;
+  }
+
+  return statements;
+}
+
+function dedupeResponsesByStatusCode(responses: NormalizedResponse[]): NormalizedResponse[] {
+  const seen = new Set<string>();
+  return responses.filter((response) => {
+    if (seen.has(response.statusCode)) {
+      return false;
+    }
+
+    seen.add(response.statusCode);
+    return true;
+  });
 }
 
 function inferSchemaFromJsExpression(expression: string): SchemaObject | undefined {
@@ -1181,9 +1326,31 @@ function inferSchemaFromJsExpression(expression: string): SchemaObject | undefin
   return { type: "string" };
 }
 
-function buildExampleFromJsExpression(expression: string): unknown {
+function buildExampleFromJsExpression(expression: string, context?: JsExampleContext): unknown {
   const trimmed = expression.trim();
   if (!trimmed) {
+    return undefined;
+  }
+
+  const nullishOperands = splitTopLevelSequence(trimmed, "??");
+  if (nullishOperands.length > 1) {
+    for (const operand of nullishOperands) {
+      const resolved = buildExampleFromJsExpression(operand, context);
+      if (resolved !== undefined && resolved !== null && resolved !== "") {
+        return resolved;
+      }
+    }
+    return undefined;
+  }
+
+  const fallbackOperands = splitTopLevelSequence(trimmed, "||");
+  if (fallbackOperands.length > 1) {
+    for (const operand of fallbackOperands) {
+      const resolved = buildExampleFromJsExpression(operand, context);
+      if (resolved !== undefined && resolved !== null && resolved !== "") {
+        return resolved;
+      }
+    }
     return undefined;
   }
 
@@ -1208,13 +1375,18 @@ function buildExampleFromJsExpression(expression: string): unknown {
     return stringLiteral;
   }
 
+  const requestAccessorExample = inferJsRequestAccessorExample(trimmed, context);
+  if (requestAccessorExample !== undefined) {
+    return requestAccessorExample;
+  }
+
   if (trimmed.startsWith("[")) {
     const block = extractBalanced(trimmed, 0, "[", "]");
     if (!block) {
       return [];
     }
 
-    return splitTopLevel(block.slice(1, -1), ",").map((item) => buildExampleFromJsExpression(item));
+    return splitTopLevel(block.slice(1, -1), ",").map((item) => buildExampleFromJsExpression(item, context));
   }
 
   if (trimmed.startsWith("{")) {
@@ -1230,12 +1402,54 @@ function buildExampleFromJsExpression(expression: string): unknown {
         continue;
       }
 
-      result[property.key] = buildExampleFromJsExpression(property.value);
+      result[property.key] = buildExampleFromJsExpression(property.value, context);
     }
     return result;
   }
 
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    const resolved = resolveJsVariableExample(trimmed, context);
+    if (resolved !== undefined) {
+      return resolved;
+    }
+  }
+
   return "";
+}
+
+function inferSchemaFromJsExample(example: unknown): SchemaObject | undefined {
+  if (example === undefined) {
+    return undefined;
+  }
+
+  if (example === null) {
+    return { nullable: true };
+  }
+
+  if (Array.isArray(example)) {
+    return {
+      type: "array",
+      items: example.length > 0 ? inferSchemaFromJsExample(example[0]) ?? { type: "string" } : { type: "string" },
+    };
+  }
+
+  switch (typeof example) {
+    case "string":
+      return { type: "string" };
+    case "number":
+      return Number.isInteger(example) ? { type: "integer" } : { type: "number" };
+    case "boolean":
+      return { type: "boolean" };
+    case "object":
+      return {
+        type: "object",
+        properties: Object.fromEntries(
+          Object.entries(example as Record<string, unknown>).map(([key, value]) => [key, inferSchemaFromJsExample(value) ?? { type: "string" }]),
+        ),
+      };
+    default:
+      return { type: "string" };
+  }
 }
 
 function parseObjectLiteralEntry(entry: string): { key: string; value: string; } | null {
@@ -1262,6 +1476,230 @@ function parseObjectLiteralEntry(entry: string): { key: string; value: string; }
     key,
     value: trimmed.slice(separatorIndex + 1).trim(),
   };
+}
+
+function createJsExampleContext(
+  body: string,
+  reqName: string,
+  seedAssignments?: Map<string, string>,
+): JsExampleContext {
+  const assignments = new Map(seedAssignments ?? []);
+
+  for (const [name, expression] of extractJsVariableAssignments(body, reqName)) {
+    assignments.set(name, expression);
+  }
+
+  return {
+    reqName,
+    assignments,
+    cache: new Map(),
+    resolving: new Set(),
+  };
+}
+
+function extractJsVariableAssignments(body: string, reqName: string): Map<string, string> {
+  const assignments = new Map<string, string>();
+
+  for (const match of body.matchAll(/(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*/g)) {
+    const variableName = match[1];
+    const startIndex = match.index ?? -1;
+    if (!variableName || startIndex < 0) {
+      continue;
+    }
+
+    const equalsIndex = body.indexOf("=", startIndex);
+    const endIndex = findTopLevelStatementTerminator(body, equalsIndex + 1);
+    if (equalsIndex < 0 || endIndex < 0) {
+      continue;
+    }
+
+    assignments.set(variableName, body.slice(equalsIndex + 1, endIndex).trim());
+  }
+
+  for (const target of ["body", "query", "params", "headers"] as const) {
+    const regex = new RegExp(`(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.${target}\\b`, "g");
+    for (const match of body.matchAll(regex)) {
+      const destructured = match[1];
+      if (!destructured) {
+        continue;
+      }
+
+      for (const part of splitTopLevel(destructured, ",")) {
+        const parsed = parseJsDestructuredAssignment(part);
+        if (!parsed) {
+          continue;
+        }
+
+        const accessor = target === "headers"
+          ? `${reqName}.headers[${JSON.stringify(parsed.sourceName)}]`
+          : `${reqName}.${target}.${parsed.sourceName}`;
+        assignments.set(parsed.localName, accessor);
+      }
+    }
+  }
+
+  return assignments;
+}
+
+function parseJsDestructuredAssignment(part: string): { sourceName: string; localName: string; } | null {
+  const cleaned = part.trim();
+  if (!cleaned || cleaned.startsWith("...")) {
+    return null;
+  }
+
+  const withoutDefault = cleaned.split("=")[0]?.trim();
+  if (!withoutDefault) {
+    return null;
+  }
+
+  const pieces = withoutDefault.split(":").map((value) => value.trim()).filter(Boolean);
+  const sourceName = pieces[0];
+  const localName = pieces[1] ?? sourceName;
+  if (!sourceName || !localName) {
+    return null;
+  }
+
+  return { sourceName, localName };
+}
+
+function resolveJsVariableExample(name: string, context?: JsExampleContext): unknown {
+  if (!context) {
+    return undefined;
+  }
+
+  if (context.cache.has(name)) {
+    return context.cache.get(name);
+  }
+
+  if (context.resolving.has(name)) {
+    return undefined;
+  }
+
+  const expression = context.assignments.get(name);
+  if (!expression) {
+    return undefined;
+  }
+
+  context.resolving.add(name);
+  const resolved = buildExampleFromJsExpression(expression, context);
+  context.resolving.delete(name);
+  context.cache.set(name, resolved);
+  return resolved;
+}
+
+function inferJsRequestAccessorExample(expression: string, context?: JsExampleContext): unknown {
+  const reqName = context?.reqName ?? "req";
+  const directBody = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.body\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  if (directBody?.[1]) {
+    return buildJsFieldExample(directBody[1], "body");
+  }
+
+  const directQuery = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.query\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  if (directQuery?.[1]) {
+    return buildJsFieldExample(directQuery[1], "query");
+  }
+
+  const directParam = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.params\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  if (directParam?.[1]) {
+    return buildJsFieldExample(directParam[1], "params");
+  }
+
+  const bodyBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.body\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  if (bodyBracket?.[2]) {
+    return buildJsFieldExample(bodyBracket[2], "body");
+  }
+
+  const queryBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.query\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  if (queryBracket?.[2]) {
+    return buildJsFieldExample(queryBracket[2], "query");
+  }
+
+  const paramBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.params\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  if (paramBracket?.[2]) {
+    return buildJsFieldExample(paramBracket[2], "params");
+  }
+
+  const headerBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.headers\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  if (headerBracket?.[2]) {
+    return buildJsFieldExample(headerBracket[2], "headers");
+  }
+
+  const headerDot = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)$`));
+  if (headerDot?.[1]) {
+    return buildJsFieldExample(headerDot[1], "headers");
+  }
+
+  const getHeader = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.(?:get|header)\\((["'\`])([^"'\\\`]+)\\1\\)$`));
+  if (getHeader?.[2]) {
+    return buildJsFieldExample(getHeader[2], "headers");
+  }
+
+  return undefined;
+}
+
+function buildJsFieldExample(
+  fieldName: string,
+  source: "body" | "query" | "params" | "headers",
+): unknown {
+  const normalized = fieldName.trim().toLowerCase();
+
+  if (source === "headers") {
+    if (normalized.includes("authorization")) {
+      return "Bearer token";
+    }
+
+    if (normalized.includes("trace")) {
+      return "trace_123";
+    }
+
+    if (normalized.includes("token")) {
+      return fieldName === fieldName.toUpperCase() ? `${fieldName}_VALUE` : "token";
+    }
+
+    return `${fieldName}_VALUE`;
+  }
+
+  if (source === "params") {
+    if (normalized === "id" || normalized.endsWith("_id")) {
+      return 1;
+    }
+
+    return fieldName;
+  }
+
+  if (normalized.includes("email")) {
+    return "user@example.com";
+  }
+
+  if (normalized === "name") {
+    return "Jane Doe";
+  }
+
+  if (normalized === "age" || normalized.endsWith("_age")) {
+    return 18;
+  }
+
+  if (normalized === "page" || normalized.endsWith("_page")) {
+    return 1;
+  }
+
+  if (normalized.includes("password")) {
+    return "secret123";
+  }
+
+  if (normalized.includes("token")) {
+    return "token";
+  }
+
+  if (normalized.includes("trace")) {
+    return "trace_123";
+  }
+
+  if (normalized.startsWith("is_") || normalized.startsWith("has_")) {
+    return true;
+  }
+
+  return fieldName;
 }
 
 function inferAuthFromMiddleware(middleware: string[]): NormalizedAuth {
@@ -1609,6 +2047,136 @@ function splitTopLevel(input: string, separator: string): string[] {
   }
 
   return results;
+}
+
+function splitTopLevelSequence(input: string, sequence: string): string[] {
+  const results: string[] = [];
+  let current = "";
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      current += character;
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      current += character;
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === "\"" || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      current += character;
+      continue;
+    }
+
+    if (!quote) {
+      if (character === "(") {
+        parenDepth += 1;
+      } else if (character === ")") {
+        parenDepth -= 1;
+      } else if (character === "[") {
+        bracketDepth += 1;
+      } else if (character === "]") {
+        bracketDepth -= 1;
+      } else if (character === "{") {
+        braceDepth += 1;
+      } else if (character === "}") {
+        braceDepth -= 1;
+      } else if (
+        input.startsWith(sequence, index)
+        && parenDepth === 0
+        && bracketDepth === 0
+        && braceDepth === 0
+      ) {
+        if (current.trim()) {
+          results.push(current.trim());
+        }
+        current = "";
+        index += sequence.length - 1;
+        continue;
+      }
+    }
+
+    current += character;
+  }
+
+  if (current.trim()) {
+    results.push(current.trim());
+  }
+
+  return results.length > 0 ? results : [input.trim()];
+}
+
+function findTopLevelStatementTerminator(input: string, startIndex: number): number {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === "\"" || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    } else if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "{") {
+      braceDepth += 1;
+    } else if (character === "}") {
+      braceDepth -= 1;
+    } else if (
+      character === ";"
+      && parenDepth === 0
+      && bracketDepth === 0
+      && braceDepth === 0
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function dedupeValues(values: string[]): string[] {
