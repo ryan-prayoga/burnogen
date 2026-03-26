@@ -457,26 +457,18 @@ Related docs:
 
 ## npm Publishing
 
-This repository includes a dedicated npm publish workflow at `.github/workflows/publish-npm.yml`.
-It is designed for npm Trusted Publisher with GitHub Actions OIDC, so it does not need an `NPM_TOKEN`.
-
-Trusted Publisher form values for the current repository:
-
-- Publisher: `GitHub Actions`
-- Organization or user: `ryan-prayoga`
-- Repository: `brunogen`
-- Workflow filename: `publish-npm.yml`
-- Environment name: `npm`
+This repository publishes to npm through `.github/workflows/publish-npm.yml`.
+It is set up for npm Trusted Publishing with GitHub Actions OIDC, so it does not need an `NPM_TOKEN`.
 
 Recommended release flow:
 
 1. Update `package.json` version and changelog.
 2. Push the commit to `main`.
 3. Create or publish a GitHub Release for the version tag.
-4. The `Publish To npm` workflow will run and publish `brunogen` to npm.
+4. The `Publish To npm` workflow will run automatically and publish the package to npm.
 
 Notes:
 
 - The workflow uses the GitHub Actions environment `npm`. If you want approvals or branch restrictions, configure that environment in GitHub repository settings.
-- Keep the Trusted Publisher fields aligned exactly with the repository owner, repository name, workflow filename, and environment name above.
-- This package is public and unscoped, so the workflow publishes the existing `brunogen` package name from `package.json`.
+- Stable releases publish to the npm `latest` dist-tag. Prereleases publish to `next`.
+- If you are setting up Trusted Publishing for a different repository, align the npm Trusted Publisher settings with that repository's owner, repository, workflow filename, and environment name.
