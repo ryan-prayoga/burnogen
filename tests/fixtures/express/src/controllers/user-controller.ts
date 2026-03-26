@@ -1,4 +1,5 @@
 // @ts-nocheck
+import Joi from "joi";
 import type { Request, Response } from "express";
 
 import {
@@ -25,10 +26,20 @@ interface UserQuery {
   order?: string;
 }
 
+const createUserSchema = Joi.object({
+  name: Joi.string().required().max(255),
+  email: Joi.string().email().required(),
+  age: Joi.number().integer().min(18).default(18),
+  role: Joi.string().valid("user", "admin").default("user"),
+  status: Joi.string().valid("active", "inactive").default("active"),
+  tags: Joi.array().items(Joi.string()).default([]),
+});
+
 export async function createUser(
   req: Request<Record<string, never>, unknown, CreateUserDto, UserQuery>,
   res: Response,
 ) {
+  const { error } = createUserSchema.validate(req.body);
   const { name, email, age = 18, role = "user", tags = [] } = req.body;
   const search = req.query.search;
   const { page: currentPage = 1, limit: pageSize = 10, order = "asc" } = req.query;
@@ -37,7 +48,7 @@ export async function createUser(
   const traceId = req.headers["x-trace-id"] ?? req.get("X-Trace-Id");
   const authorization = req.get("Authorization");
 
-  if (!name || !email) {
+  if (error || !name || !email) {
     return sendValidationError(res, { name: "required", email: "required" });
   }
 

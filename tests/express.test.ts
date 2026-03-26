@@ -14,7 +14,12 @@ describe("Express adapter", () => {
     const createUser = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/v1/users" && endpoint.method === "post");
     expect(createUser?.auth.type).toBe("bearer");
     expect(createUser?.requestBody?.schema.properties?.name?.type).toBe("string");
+    expect(createUser?.requestBody?.schema.properties?.name?.maxLength).toBe(255);
+    expect(createUser?.requestBody?.schema.properties?.email?.format).toBe("email");
     expect(createUser?.requestBody?.schema.properties?.age?.type).toBe("integer");
+    expect(createUser?.requestBody?.schema.properties?.age?.minimum).toBe(18);
+    expect(createUser?.requestBody?.schema.properties?.role?.enum).toEqual(["user", "admin"]);
+    expect(createUser?.requestBody?.schema.properties?.status?.enum).toEqual(["active", "inactive"]);
     expect(createUser?.requestBody?.schema.properties?.price?.type).toBe("number");
     expect(createUser?.requestBody?.schema.properties?.active?.type).toBe("boolean");
     expect(createUser?.requestBody?.schema.properties?.tags?.type).toBe("array");
@@ -93,6 +98,28 @@ describe("Express adapter", () => {
 
     expect(artifacts.warnings).not.toContainEqual(expect.objectContaining({
       code: "EXPRESS_HANDLER_NOT_FOUND",
+    }));
+  });
+
+  it("supports configurable auth middleware hints for Express", async () => {
+    const artifacts = await generateArtifacts(fixturePath("express-custom-auth"), defaultConfig());
+    const reports = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/reports" && endpoint.method === "get");
+
+    expect(reports?.auth.type).toBe("none");
+    expect(artifacts.warnings).toContainEqual(expect.objectContaining({
+      code: "EXPRESS_AUTH_MIDDLEWARE_UNKNOWN",
+      message: expect.stringContaining("checkPermission"),
+    }));
+
+    const config = defaultConfig();
+    config.auth.middlewarePatterns.bearer = ["checkPermission"];
+
+    const configuredArtifacts = await generateArtifacts(fixturePath("express-custom-auth"), config);
+    const configuredReports = configuredArtifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/reports" && endpoint.method === "get");
+
+    expect(configuredReports?.auth.type).toBe("bearer");
+    expect(configuredArtifacts.warnings).not.toContainEqual(expect.objectContaining({
+      code: "EXPRESS_AUTH_MIDDLEWARE_UNKNOWN",
     }));
   });
 });
