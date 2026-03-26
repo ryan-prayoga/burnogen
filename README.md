@@ -34,6 +34,12 @@ Brunogen is already useful for real codebases that stay close to common framewor
   </tr>
 </table>
 
+## Try These Demos
+
+- Start with [Laravel](docs/demo/laravel-happy-path/README.md) if you want the most complete inference path today.
+- Open [Express](docs/demo/express-happy-path/README.md) if your codebase uses mounted routers and straightforward local helpers.
+- Open [Go](docs/demo/go-happy-path/README.md) if you want to see the current Gin-based experimental path.
+
 ## What You Get
 
 - `openapi.yaml` generated directly from your routes, handlers, controllers, and request/response patterns
