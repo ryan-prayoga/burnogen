@@ -8,7 +8,9 @@ Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it fin
 
 Brunogen is already useful for real codebases that stay close to common framework conventions. Laravel is the strongest path today, with materially richer request and response inference. Express.js and Go support are available and improving, but still more heuristic.
 
-![Brunogen output preview](docs/assets/readme-output-preview.png)
+| Laravel | Express | Go |
+| --- | --- | --- |
+| ![Laravel output preview](docs/assets/preview-laravel.png) | ![Express output preview](docs/assets/preview-express.png) | ![Go output preview](docs/assets/preview-go.png) |
 
 ## What You Get
 
@@ -103,6 +105,7 @@ Bruno: .../tests/fixtures/express/.brunogen/bruno
 
 The Go fixtures used by the test suite live in `tests/fixtures/gin`, `tests/fixtures/fiber`, and `tests/fixtures/echo`.
 The Gin fixture is the simplest place to try the current Go adapter behavior end to end.
+Curated generated snapshots for that path live in [docs/demo/go-happy-path](docs/demo/go-happy-path/README.md).
 
 ```bash
 cd tests/fixtures/gin

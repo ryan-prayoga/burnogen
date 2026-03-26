@@ -10,7 +10,8 @@ Command used:
 
 ```bash
 cd tests/fixtures/express
-node ../../../dist/cli.js generate
+brunogen init
+brunogen generate
 ```
 
 Expected result:

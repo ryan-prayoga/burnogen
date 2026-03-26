@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Brunogen Framework Previews</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe6;
+        --panel: rgba(255, 253, 248, 0.92);
+        --border: #e9dcc3;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --code-bg: #17212f;
+        --code-text: #f8fafc;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(180, 83, 9, 0.14), transparent 25%),
+          linear-gradient(180deg, #fcf8f1, var(--bg));
+        color: var(--text);
+      }
+
+      .page {
+        width: 1400px;
+        margin: 0 auto;
+        padding: 36px;
+      }
+
+      .preview {
+        margin: 0 0 28px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        overflow: hidden;
+        background: var(--panel);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+      }
+
+      .head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 24px 26px 20px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .label {
+        display: inline-block;
+        padding: 7px 11px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+        margin-bottom: 12px;
+      }
+
+      .laravel .label { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+      .express .label { background: rgba(16, 185, 129, 0.12); color: #047857; }
+      .go .label { background: rgba(59, 130, 246, 0.12); color: #1d4ed8; }
+
+      h2 {
+        margin: 0 0 6px;
+        font-size: 30px;
+      }
+
+      .desc {
+        margin: 0;
+        color: var(--muted);
+        font-size: 16px;
+        line-height: 1.45;
+      }
+
+      .meta {
+        color: var(--muted);
+        font-size: 14px;
+        text-align: right;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        padding: 18px;
+      }
+
+      .codepanel {
+        border-radius: 22px;
+        overflow: hidden;
+        border: 1px solid #324156;
+        background: var(--code-bg);
+      }
+
+      .codehead {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 18px;
+        background: rgba(255, 255, 255, 0.04);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        color: #e5e7eb;
+        font-size: 14px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-weight: 800;
+        font-size: 12px;
+      }
+
+      .chip.yaml { background: rgba(96, 165, 250, 0.16); color: #bfdbfe; }
+      .chip.bru { background: rgba(248, 113, 113, 0.14); color: #fecaca; }
+
+      pre {
+        margin: 0;
+        padding: 18px 20px 22px;
+        color: var(--code-text);
+        font-size: 14px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+      }
+
+      .key.yaml { color: #93c5fd; }
+      .key.bru { color: #fca5a5; }
+      .dim { color: #cbd5e1; }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="preview laravel" id="laravel">
+        <div class="head">
+          <div>
+            <div class="label">Laravel</div>
+            <h2>FormRequest + Resource response</h2>
+            <p class="desc">The strongest path today: richer request inference, auth hints, and clean response examples.</p>
+          </div>
+          <div class="meta">6 endpoints in the checked-in happy path</div>
+        </div>
+        <div class="grid">
+          <article class="codepanel">
+            <div class="codehead"><span>OpenAPI snippet</span><span class="chip yaml">openapi.yaml</span></div>
+            <pre><span class="key yaml">openapi</span>: 3.1.0
+<span class="key yaml">paths</span>:
+  /api/users:
+    post:
+      <span class="key yaml">operationId</span>: usercontrollerStore
+      <span class="key yaml">requestBody</span>:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                <span class="key yaml">name</span>: { type: string }
+                <span class="key yaml">email</span>: { format: email, type: string }
+                <span class="key yaml">age</span>: { minimum: 18, type: integer }
+      <span class="key yaml">responses</span>:
+        "201":
+          content:
+            application/json:
+              example:
+                <span class="key yaml">message</span>: User created
+                <span class="key yaml">data</span>: { id: 1, name: Jane Doe }</pre>
+          </article>
+          <article class="codepanel">
+            <div class="codehead"><span>Bruno snippet</span><span class="chip bru">usercontrollerstore.bru</span></div>
+            <pre><span class="key bru">post</span> {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: bearer
+}
+
+<span class="key bru">body:json</span> {
+  {
+    "name": "",
+    "email": "user@example.com",
+    "age": 1
+  }
+}
+
+<span class="key bru">example</span> {
+  name: "201 Response"
+  response: {
+    status: { code: 201, text: Created }
+    <span class="dim">body:</span> {"message":"User created","data":{"id":1}}
+  }
+}</pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="preview express" id="express">
+        <div class="head">
+          <div>
+            <div class="label">Express</div>
+            <h2>Mounted router + local response helper</h2>
+            <p class="desc">Reads straightforward request access patterns and follows local helper wrappers into response examples.</p>
+          </div>
+          <div class="meta">3 endpoints in the checked-in happy path</div>
+        </div>
+        <div class="grid">
+          <article class="codepanel">
+            <div class="codehead"><span>OpenAPI snippet</span><span class="chip yaml">openapi.yaml</span></div>
+            <pre><span class="key yaml">paths</span>:
+  /api/users:
+    post:
+      <span class="key yaml">requestBody</span>:
+        content:
+          application/json:
+            schema:
+              properties:
+                <span class="key yaml">name</span>: { type: string }
+                <span class="key yaml">email</span>: { type: string }
+                <span class="key yaml">age</span>: { type: integer }
+      <span class="key yaml">parameters</span>:
+        - name: page
+          in: query
+        - name: X-Trace-Id
+          in: header
+      <span class="key yaml">responses</span>:
+        "201":
+          content:
+            application/json:
+              example:
+                <span class="key yaml">message</span>: user created</pre>
+          </article>
+          <article class="codepanel">
+            <div class="codehead"><span>Bruno snippet</span><span class="chip bru">createuser.bru</span></div>
+            <pre><span class="key bru">post</span> {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: bearer
+}
+
+<span class="key bru">params:query</span> {
+  page: 1
+}
+
+<span class="key bru">headers</span> {
+  accept: application/json
+  X-Trace-Id: {{X-Trace-Id}}
+}
+
+<span class="key bru">example</span> {
+  name: "201 Response"
+  response: {
+    status: { code: 201, text: Created }
+    <span class="dim">body:</span> {"message":"user created","data":{"id":1}}
+  }
+}</pre>
+          </article>
+        </div>
+      </section>
+
+      <section class="preview go" id="go">
+        <div class="head">
+          <div>
+            <div class="label">Go</div>
+            <h2>Gin bind + direct JSON response</h2>
+            <p class="desc">Still experimental, but already useful for conventional Gin, Fiber, and Echo handlers with direct JSON output.</p>
+          </div>
+          <div class="meta">2 endpoints in the checked-in Gin demo</div>
+        </div>
+        <div class="grid">
+          <article class="codepanel">
+            <div class="codehead"><span>OpenAPI snippet</span><span class="chip yaml">openapi.yaml</span></div>
+            <pre><span class="key yaml">paths</span>:
+  /api/users:
+    post:
+      <span class="key yaml">operationId</span>: createUser
+      <span class="key yaml">requestBody</span>:
+        content:
+          application/json:
+            schema:
+              properties:
+                <span class="key yaml">name</span>: { type: string }
+                <span class="key yaml">email</span>: { type: string }
+                <span class="key yaml">age</span>: { type: integer }
+      <span class="key yaml">responses</span>:
+        "201":
+          content:
+            application/json:
+              example:
+                <span class="key yaml">message</span>: user created
+                <span class="key yaml">data</span>: { name: Jane Doe }</pre>
+          </article>
+          <article class="codepanel">
+            <div class="codehead"><span>Bruno snippet</span><span class="chip bru">createuser.bru</span></div>
+            <pre><span class="key bru">post</span> {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: bearer
+}
+
+<span class="key bru">headers</span> {
+  accept: application/json
+  content-type: application/json
+}
+
+<span class="key bru">body:json</span> {
+  {
+    "name": "",
+    "email": "",
+    "age": 1
+  }
+}
+
+<span class="key bru">example</span> {
+  name: "201 Response"
+  response: { status: { code: 201, text: Created } }
+}</pre>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

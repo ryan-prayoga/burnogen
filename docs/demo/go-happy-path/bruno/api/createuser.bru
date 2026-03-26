@@ -1,0 +1,79 @@
+meta {
+  name: createUser
+  type: http
+  seq: 1
+  tags: [
+    api
+  ]
+}
+
+post {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: bearer
+}
+
+headers {
+  accept: application/json
+  content-type: application/json
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+body:json {
+  {
+    "name": "",
+    "email": "",
+    "age": 1
+  }
+}
+
+example {
+  name: "201 Response"
+  description: "Inferred JSON response"
+
+  request: {
+    url: {{baseUrl}}/api/users
+    method: post
+    mode: json
+    headers: {
+      accept: application/json
+      content-type: application/json
+    }
+
+    body:json: {
+      {
+        "name": "",
+        "email": "",
+        "age": 1
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 201
+      text: Created
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "message": "user created",
+          "data": {
+            "name": "Jane Doe",
+            "email": "user@example.com",
+            "age": 1
+          }
+        }
+      '''
+    }
+  }
+}
