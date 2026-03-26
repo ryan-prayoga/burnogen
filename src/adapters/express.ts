@@ -948,52 +948,152 @@ function inferJoiFieldsForHandler(
     }
   }
 
+  for (const field of extractInlineJoiSchemaFields(handlerRecord.body, reqName, target)) {
+    const existing = fields.get(field.name);
+    fields.set(field.name, {
+      name: field.name,
+      required: existing?.required || field.required,
+      schema: mergeSchemaObjects(existing?.schema, field.schema),
+    });
+  }
+
   return [...fields.values()];
 }
 
 function extractJoiSchemaFields(content: string, schemaName: string): JoiFieldAnalysis[] {
-  const definitionRegex = new RegExp(`(?:const|let|var)\\s+${escapeRegExp(schemaName)}\\s*=\\s*[A-Za-z_][A-Za-z0-9_.]*\\s*\\.\\s*object\\s*(?:<[\\s\\S]*?>\\s*)?\\(`, "g");
+  const definitionRegex = new RegExp(`(?:export\\s+)?(?:const|let|var)\\s+${escapeRegExp(schemaName)}\\s*=`, "g");
 
   for (const match of content.matchAll(definitionRegex)) {
-    const openParenIndex = content.indexOf("(", match.index ?? 0);
-    const argsBlock = openParenIndex >= 0 ? extractBalanced(content, openParenIndex, "(", ")") : null;
-    if (!argsBlock) {
+    const startIndex = match.index ?? -1;
+    if (startIndex < 0) {
       continue;
     }
 
-    const objectArgument = splitTopLevel(argsBlock.slice(1, -1), ",")[0]?.trim();
-    if (!objectArgument?.startsWith("{")) {
+    const equalsIndex = content.indexOf("=", startIndex);
+    const endIndex = equalsIndex >= 0 ? findTopLevelStatementTerminator(content, equalsIndex + 1) : -1;
+    if (equalsIndex < 0 || endIndex < 0) {
       continue;
     }
 
-    const objectBlock = extractBalanced(objectArgument, 0, "{", "}");
-    if (!objectBlock) {
-      continue;
+    const expression = content.slice(equalsIndex + 1, endIndex).trim();
+    const fields = extractJoiFieldsFromSchemaExpression(expression);
+
+    if (fields.length > 0) {
+      return fields;
     }
-
-    const fields: JoiFieldAnalysis[] = [];
-    for (const entry of splitTopLevel(objectBlock.slice(1, -1), ",")) {
-      const property = parseObjectLiteralEntry(entry);
-      if (!property) {
-        continue;
-      }
-
-      const parsed = parseJoiFieldExpression(property.value);
-      if (!parsed) {
-        continue;
-      }
-
-      fields.push({
-        name: property.key,
-        required: parsed.required,
-        schema: parsed.schema,
-      });
-    }
-
-    return fields;
   }
 
   return [];
+}
+
+function extractInlineJoiSchemaFields(
+  body: string,
+  reqName: string,
+  target: "body" | "query",
+): JoiFieldAnalysis[] {
+  const statements = new Set<string>();
+  const inlineRegex = /[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/g;
+  const validateRegex = new RegExp(`\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`);
+
+  for (const match of body.matchAll(inlineRegex)) {
+    const startIndex = match.index ?? -1;
+    if (startIndex < 0) {
+      continue;
+    }
+
+    const endIndex = findTopLevelStatementTerminator(body, startIndex);
+    if (endIndex < 0) {
+      continue;
+    }
+
+    const statement = body.slice(startIndex, endIndex).trim();
+    if (!validateRegex.test(statement)) {
+      continue;
+    }
+
+    statements.add(statement);
+  }
+
+  const fields = new Map<string, JoiFieldAnalysis>();
+  for (const statement of statements) {
+    for (const field of extractJoiFieldsFromSchemaExpression(statement)) {
+      const existing = fields.get(field.name);
+      fields.set(field.name, {
+        name: field.name,
+        required: existing?.required || field.required,
+        schema: mergeSchemaObjects(existing?.schema, field.schema),
+      });
+    }
+  }
+
+  return [...fields.values()];
+}
+
+function extractJoiFieldsFromSchemaExpression(expression: string): JoiFieldAnalysis[] {
+  const objectBlock = extractJoiObjectBlock(expression);
+  if (!objectBlock) {
+    return [];
+  }
+
+  const fields: JoiFieldAnalysis[] = [];
+  for (const entry of splitTopLevel(objectBlock.slice(1, -1), ",")) {
+    const property = parseObjectLiteralEntry(entry);
+    if (!property) {
+      continue;
+    }
+
+    const parsed = parseJoiFieldExpression(property.value);
+    if (!parsed) {
+      continue;
+    }
+
+    fields.push({
+      name: property.key,
+      required: parsed.required,
+      schema: parsed.schema,
+    });
+  }
+
+  return fields;
+}
+
+function extractJoiObjectBlock(expression: string): string | null {
+  const objectMatch = expression.match(/[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/);
+  if (!objectMatch) {
+    return null;
+  }
+
+  const objectCallIndex = expression.indexOf(objectMatch[0]);
+  const objectOpenParenIndex = expression.indexOf("(", objectCallIndex);
+  const objectArgs = objectOpenParenIndex >= 0 ? extractBalanced(expression, objectOpenParenIndex, "(", ")") : null;
+
+  if (objectArgs) {
+    const directObject = splitTopLevel(objectArgs.slice(1, -1), ",")[0]?.trim();
+    if (directObject?.startsWith("{")) {
+      const directBlock = extractBalanced(directObject, 0, "{", "}");
+      if (directBlock) {
+        return directBlock;
+      }
+    }
+  }
+
+  const keysMatch = expression.match(/\.\s*keys\s*\(/);
+  if (!keysMatch) {
+    return null;
+  }
+
+  const keysOpenParenIndex = expression.indexOf("(", expression.indexOf(keysMatch[0]));
+  const keysArgs = keysOpenParenIndex >= 0 ? extractBalanced(expression, keysOpenParenIndex, "(", ")") : null;
+  if (!keysArgs) {
+    return null;
+  }
+
+  const keysObject = splitTopLevel(keysArgs.slice(1, -1), ",")[0]?.trim();
+  if (!keysObject?.startsWith("{")) {
+    return null;
+  }
+
+  return extractBalanced(keysObject, 0, "{", "}");
 }
 
 function parseJoiFieldExpression(expression: string): { required: boolean; schema: SchemaObject; } | null {
@@ -1005,23 +1105,24 @@ function parseJoiFieldExpression(expression: string): { required: boolean; schem
   const schema: SchemaObject = {};
   let required = false;
   let baseType: SchemaObject["type"] = "string";
-
-  if (/\.array\s*\(/.test(trimmed)) {
-    baseType = "array";
-  } else if (/\.boolean\s*\(/.test(trimmed)) {
-    baseType = "boolean";
-  } else if (/\.number\s*\(/.test(trimmed)) {
-    baseType = "number";
-  } else if (/\.object\s*\(/.test(trimmed)) {
-    baseType = "object";
-  } else if (/\.string\s*\(/.test(trimmed)) {
-    baseType = "string";
+  const typeMatch = trimmed.match(/^[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*(array|boolean|number|object|string)\s*\(/);
+  if (typeMatch?.[1]) {
+    baseType = typeMatch[1] as SchemaObject["type"];
   }
 
   schema.type = baseType;
 
   if (/\.integer\s*\(/.test(trimmed)) {
     schema.type = "integer";
+  }
+
+  if (schema.type === "object") {
+    const nestedFields = extractJoiFieldsFromSchemaExpression(trimmed);
+    if (nestedFields.length > 0) {
+      schema.properties = Object.fromEntries(nestedFields.map((field) => [field.name, field.schema]));
+      const requiredFields = nestedFields.filter((field) => field.required).map((field) => field.name);
+      schema.required = requiredFields.length > 0 ? requiredFields : undefined;
+    }
   }
 
   if (/\.email\s*\(/.test(trimmed)) {

@@ -122,4 +122,21 @@ describe("Express adapter", () => {
       code: "EXPRESS_AUTH_MIDDLEWARE_UNKNOWN",
     }));
   });
+
+  it("infers inline and nested Joi schemas for Express request bodies", async () => {
+    const artifacts = await generateArtifacts(fixturePath("express-joi-inline"), defaultConfig());
+    const searchCatalog = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/catalog/search" && endpoint.method === "post");
+
+    expect(searchCatalog?.requestBody?.schema.properties?.page?.type).toBe("integer");
+    expect(searchCatalog?.requestBody?.schema.properties?.page?.minimum).toBe(1);
+    expect(searchCatalog?.requestBody?.schema.properties?.page?.default).toBe(1);
+    expect(searchCatalog?.requestBody?.schema.properties?.include?.type).toBe("array");
+    expect(searchCatalog?.requestBody?.schema.properties?.include?.items?.type).toBe("string");
+    expect(searchCatalog?.requestBody?.schema.properties?.filters?.type).toBe("object");
+    expect(searchCatalog?.requestBody?.schema.properties?.filters?.required).toEqual(["status"]);
+    expect(searchCatalog?.requestBody?.schema.properties?.filters?.properties?.status?.enum).toEqual(["draft", "published"]);
+    expect(searchCatalog?.requestBody?.schema.properties?.filters?.properties?.featured?.type).toBe("boolean");
+    expect(searchCatalog?.requestBody?.schema.required).toContain("filters");
+    expect(searchCatalog?.responses.map((response) => response.statusCode)).toEqual(expect.arrayContaining(["200", "422"]));
+  });
 });
