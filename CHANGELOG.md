@@ -19,6 +19,12 @@
 
 ## Unreleased
 
+- Expand Express route inference for nested mounts, named router exports, chained routes, and broader auth middleware hints
+- Improve Express request/response inference for direct body access, typed route syntax, common helper wrappers, and richer demo coverage
+- Rework Go route scanning to follow grouped registrations across helper functions and broaden Gin/Fiber/Echo fixture coverage
+- Infer more Go request constraints from `binding` / `validate` tags and handle more response patterns such as `Status(...).JSON(...)`, `AbortWithStatusJSON(...)`, and `SendStatus(...)`
+- Add stronger `doctor` output for Express and Go projects plus extra OpenAPI consistency checks in `brunogen validate`
+
 ## v0.2.0
 
 - Add Express.js project support with mounted router, request, and response inference
