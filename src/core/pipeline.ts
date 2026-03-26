@@ -40,6 +40,78 @@ export async function validateOpenApi(openApi: Record<string, unknown>): Promise
   await SwaggerParser.validate(openApi as never);
 }
 
+export function collectOpenApiConsistencyWarnings(openApi: Record<string, unknown>): string[] {
+  const warnings: string[] = [];
+  const paths = (openApi.paths ?? {}) as Record<string, Record<string, {
+    operationId?: string;
+    parameters?: Array<{ name?: string; in?: string; }>;
+    responses?: Record<string, { content?: Record<string, { schema?: unknown; }>; }>;
+    security?: Array<Record<string, string[]>>;
+  }>>;
+  const securitySchemes = new Set(
+    Object.keys(((openApi.components ?? {}) as { securitySchemes?: Record<string, unknown>; }).securitySchemes ?? {}),
+  );
+  const operationIds = new Map<string, string>();
+
+  for (const [pathname, operations] of Object.entries(paths)) {
+    const pathParams = new Set(
+      [...pathname.matchAll(/\{([^}]+)\}/g)]
+        .map((match) => match[1])
+        .filter(Boolean),
+    );
+
+    for (const [method, operation] of Object.entries(operations)) {
+      const label = `${method.toUpperCase()} ${pathname}`;
+      const operationId = operation.operationId;
+      if (operationId) {
+        const previous = operationIds.get(operationId);
+        if (previous) {
+          warnings.push(`[OPENAPI_DUPLICATE_OPERATION_ID] ${label} duplicates operationId '${operationId}' already used by ${previous}.`);
+        } else {
+          operationIds.set(operationId, label);
+        }
+      }
+
+      const declaredPathParams = new Set(
+        (operation.parameters ?? [])
+          .filter((parameter) => parameter.in === "path" && parameter.name)
+          .map((parameter) => parameter.name as string),
+      );
+      for (const pathParam of pathParams) {
+        if (!declaredPathParams.has(pathParam)) {
+          warnings.push(`[OPENAPI_PATH_PARAM_MISSING] ${label} is missing a declared path parameter for '{${pathParam}}'.`);
+        }
+      }
+      for (const declaredParam of declaredPathParams) {
+        if (!pathParams.has(declaredParam)) {
+          warnings.push(`[OPENAPI_PATH_PARAM_UNUSED] ${label} declares path parameter '${declaredParam}' that does not appear in the URL.`);
+        }
+      }
+
+      for (const securityRequirement of operation.security ?? []) {
+        for (const schemeName of Object.keys(securityRequirement)) {
+          if (!securitySchemes.has(schemeName)) {
+            warnings.push(`[OPENAPI_SECURITY_SCHEME_MISSING] ${label} references security scheme '${schemeName}' but it is not defined in components.securitySchemes.`);
+          }
+        }
+      }
+
+      for (const [statusCode, response] of Object.entries(operation.responses ?? {})) {
+        if (statusCode === "204" || statusCode === "304") {
+          continue;
+        }
+
+        const content = response.content ?? {};
+        if (Object.keys(content).length === 0) {
+          warnings.push(`[OPENAPI_RESPONSE_SCHEMA_EMPTY] ${label} response ${statusCode} has no response body schema.`);
+        }
+      }
+    }
+  }
+
+  return warnings;
+}
+
 export function formatWarnings(warnings: GenerationWarning[]): string[] {
   return warnings.map((warning) => {
     const location = warning.location?.line
