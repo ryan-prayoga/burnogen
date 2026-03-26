@@ -1,12 +1,17 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
 
 - Broaden Laravel manual request inference for `has`, `filled`, `safe()->only([...])`, and `enum(...)`
 - Infer Laravel responses through same-controller wrapper helpers and `findOrFail` / `firstOrFail` not-found paths
 - Extend Laravel fixture coverage for richer request and response stabilization cases
 - Improve Express request and response inference for variable-backed payloads, header access, and local helper wrappers
+- Infer typed Express request schemas from common default-value patterns
+- Add and lock an Express happy-path demo snapshot
+- Improve Go response inference for direct Gin and Echo JSON responses
 - Add explicit supported-pattern guidance for Laravel and Express in the README
+
+## Unreleased
 
 ## v0.2.0
 
