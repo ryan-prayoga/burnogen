@@ -69,5 +69,12 @@ describe("Laravel adapter", () => {
       expect.objectContaining({ name: "project", in: "path" }),
     ]);
     expect(resourceShow?.responses[0]?.schema?.properties?.data?.type).toBe("object");
+    expect(resourceShow?.responses[0]?.example).toEqual({
+      data: {
+        id: 1,
+        name: "Jane Doe",
+        owner_email: "user@example.com",
+      },
+    });
   });
 });

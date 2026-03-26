@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreUserRequest;
+use App\Http\Resources\ProjectResource;
 use Illuminate\Http\Request;
 
 class UserController extends Controller
@@ -40,11 +41,10 @@ class UserController extends Controller
 
     public function show(Request $request)
     {
-        return [
-            'data' => [
-                'id' => 1,
-                'name' => 'Jane Doe',
-            ],
-        ];
+        return new ProjectResource((object) [
+            'id' => 1,
+            'name' => 'Launchpad',
+            'owner_email' => 'owner@example.com',
+        ]);
     }
 }

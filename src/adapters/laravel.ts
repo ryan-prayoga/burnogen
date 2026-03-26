@@ -33,6 +33,11 @@ interface ControllerAnalysis {
   warnings: GenerationWarning[];
 }
 
+interface LaravelResourceSchema {
+  schema: SchemaObject;
+  example: unknown;
+}
+
 interface ParsedHandler {
   controller?: string;
   action?: string;
@@ -455,7 +460,7 @@ async function analyzeControllerHandler(
 
     queryParameters = extractLaravelQueryParameters(body);
     headerParameters = extractLaravelHeaderParameters(body);
-    responses = extractLaravelResponses(body);
+    responses = await extractLaravelResponses(body, classIndex);
   }
 
   const result = {
@@ -922,7 +927,10 @@ function mergeSchemaObjects(
   };
 }
 
-function extractLaravelResponses(methodBody: string): NormalizedResponse[] {
+async function extractLaravelResponses(
+  methodBody: string,
+  classIndex: Map<string, PhpClassRecord>,
+): Promise<NormalizedResponse[]> {
   const responses = new Map<string, NormalizedResponse>();
   const exampleContext = createPhpExampleContext(methodBody);
 
@@ -966,7 +974,121 @@ function extractLaravelResponses(methodBody: string): NormalizedResponse[] {
     }
   }
 
+  const resourceResponses = await extractLaravelResourceResponses(methodBody, classIndex);
+  for (const response of resourceResponses) {
+    if (!responses.has(response.statusCode)) {
+      responses.set(response.statusCode, response);
+    }
+  }
+
   return [...responses.values()];
+}
+
+async function extractLaravelResourceResponses(
+  methodBody: string,
+  classIndex: Map<string, PhpClassRecord>,
+): Promise<NormalizedResponse[]> {
+  const responses: NormalizedResponse[] = [];
+
+  for (const match of methodBody.matchAll(/return\s+new\s+([A-Za-z0-9_\\]+)\s*\(/g)) {
+    const resourceType = match[1];
+    if (!resourceType) {
+      continue;
+    }
+
+    const resourceResponse = await buildLaravelResourceResponse(resourceType, "single", classIndex);
+    if (resourceResponse) {
+      responses.push(resourceResponse);
+    }
+  }
+
+  for (const match of methodBody.matchAll(/return\s+([A-Za-z0-9_\\]+)::(make|collection)\s*\(/g)) {
+    const resourceType = match[1];
+    const factoryMethod = match[2];
+    if (!resourceType || !factoryMethod) {
+      continue;
+    }
+
+    const resourceResponse = await buildLaravelResourceResponse(
+      resourceType,
+      factoryMethod === "collection" ? "collection" : "single",
+      classIndex,
+    );
+    if (resourceResponse) {
+      responses.push(resourceResponse);
+    }
+  }
+
+  return dedupeResponsesByStatusCode(responses);
+}
+
+async function buildLaravelResourceResponse(
+  resourceType: string,
+  mode: "single" | "collection",
+  classIndex: Map<string, PhpClassRecord>,
+): Promise<NormalizedResponse | undefined> {
+  const resourceSchema = await parseLaravelResourceSchema(resourceType, classIndex);
+  if (!resourceSchema) {
+    return undefined;
+  }
+
+  return {
+    statusCode: "200",
+    description: "Inferred Laravel resource response",
+    contentType: "application/json",
+    schema: mode === "collection"
+      ? {
+        type: "object",
+        properties: {
+          data: {
+            type: "array",
+            items: resourceSchema.schema,
+          },
+        },
+      }
+      : {
+        type: "object",
+        properties: {
+          data: resourceSchema.schema,
+        },
+      },
+    example: mode === "collection"
+      ? { data: [resourceSchema.example] }
+      : { data: resourceSchema.example },
+  };
+}
+
+async function parseLaravelResourceSchema(
+  resourceType: string,
+  classIndex: Map<string, PhpClassRecord>,
+): Promise<LaravelResourceSchema | undefined> {
+  const resourceRecord = classIndex.get(shortPhpClassName(resourceType));
+  if (!resourceRecord) {
+    return undefined;
+  }
+
+  const content = await fs.readFile(resourceRecord.filePath, "utf8");
+  const methodMatch = /function\s+toArray\s*\(([^)]*)\)/m.exec(content);
+  if (!methodMatch) {
+    return undefined;
+  }
+
+  const bodyStartIndex = content.indexOf("{", methodMatch.index);
+  const body = bodyStartIndex >= 0 ? extractBalanced(content, bodyStartIndex, "{", "}") : null;
+  if (!body) {
+    return undefined;
+  }
+
+  const arrayLiteral = extractDirectReturnArrays(body)[0] ?? extractReturnArray(body);
+  if (!arrayLiteral) {
+    return undefined;
+  }
+
+  const example = parsePhpExampleValue(arrayLiteral, createPhpExampleContext(body));
+  return {
+    schema: inferSchemaFromExample(example),
+    example,
+  };
 }
 
 const unresolvedPhpExample = Symbol("unresolved-php-example");
@@ -1049,6 +1171,18 @@ function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParamete
     }
 
     seen.add(key);
+    return true;
+  });
+}
+
+function dedupeResponsesByStatusCode(responses: NormalizedResponse[]): NormalizedResponse[] {
+  const seen = new Set<string>();
+  return responses.filter((response) => {
+    if (seen.has(response.statusCode)) {
+      return false;
+    }
+
+    seen.add(response.statusCode);
     return true;
   });
 }
