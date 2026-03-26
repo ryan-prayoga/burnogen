@@ -19,6 +19,8 @@
 
 ## Unreleased
 
+## v0.4.0
+
 - Expand Express route inference for nested mounts, named router exports, chained routes, and broader auth middleware hints
 - Improve Express request/response inference for direct body access, typed route syntax, inline and nested Joi-backed schema hints, common helper wrappers, and richer demo coverage
 - Rework Go route scanning to follow grouped registrations across helper functions and broaden Gin/Fiber/Echo fixture coverage
