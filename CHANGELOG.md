@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.1
+
+- Publish `brunogen` from the `ryan-prayoga/brunogen` repository metadata on npm
+- Add npm Trusted Publisher workflow for GitHub Actions OIDC
+- Publish prereleases to the npm `next` dist-tag
+- Expand documentation for Express.js support and npm publishing
+
 ## v0.1.0-alpha
 
 First public alpha positioning for Brunogen.

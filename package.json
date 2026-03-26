@@ -1,6 +1,6 @@
 {
   "name": "brunogen",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.1",
   "description": "Scan Laravel, Express.js, and Go API projects, normalize them into OpenAPI, and emit ready-to-try Bruno collections.",
   "type": "commonjs",
   "main": "./dist/index.js",
