@@ -6,8 +6,6 @@ Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it fin
 
 Early public alpha. Laravel is the primary happy path today and now has materially richer request and response inference. Express.js and Go support exist, but remain experimental and heuristic.
 
-CI runs `npm run verify` on pushes to `main` and on pull requests. That includes the Laravel golden snapshot test for the checked-in demo path.
-
 ## Install
 
 ```bash
@@ -441,34 +439,8 @@ example {
 - Reduce Go false positives and document supported code patterns more precisely
 - Add more canonical fixtures before broadening framework claims
 
-## Release Hygiene
-
-Useful checks before tagging:
-
-```bash
-npm run verify
-```
-
-Related docs:
+## Project Docs
 
 - [CHANGELOG.md](CHANGELOG.md)
 - [CONTRIBUTING.md](CONTRIBUTING.md)
 - [docs/release-checklist.md](docs/release-checklist.md)
-
-## npm Publishing
-
-This repository publishes to npm through `.github/workflows/publish-npm.yml`.
-It is set up for npm Trusted Publishing with GitHub Actions OIDC, so it does not need an `NPM_TOKEN`.
-
-Recommended release flow:
-
-1. Update `package.json` version and changelog.
-2. Push the commit to `main`.
-3. Create or publish a GitHub Release for the version tag.
-4. The `Publish To npm` workflow will run automatically and publish the package to npm.
-
-Notes:
-
-- The workflow uses the GitHub Actions environment `npm`. If you want approvals or branch restrictions, configure that environment in GitHub repository settings.
-- Stable releases publish to the npm `latest` dist-tag. Prereleases publish to `next`.
-- If you are setting up Trusted Publishing for a different repository, align the npm Trusted Publisher settings with that repository's owner, repository, workflow filename, and environment name.
