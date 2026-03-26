@@ -48,17 +48,17 @@ OpenAPI is the internal source of truth after scanning. Bruno is the output targ
 - Express.js scanning in experimental mode for mounted routers, straightforward request access patterns, and local response helpers
 - Go Gin, Fiber, and Echo scanning in experimental mode with stronger direct JSON response inference
 
+For a more detailed per-feature status, see the Support Matrix below.
+
 ## Laravel-First Quickstart
 
 The current canonical happy path is the minimal Laravel fixture in `tests/fixtures/laravel`.
 Curated generated snapshots for that path live in [docs/demo/laravel-happy-path](docs/demo/laravel-happy-path/README.md).
 
 ```bash
-npm install
-npm run build
-
 cd tests/fixtures/laravel
-node ../../../dist/cli.js generate
+brunogen init
+brunogen generate
 ```
 
 To refresh the checked-in Laravel demo snapshots after an intentional output change:
@@ -82,11 +82,9 @@ It covers mounted routers, route chains, middleware-based auth hints, request ac
 Curated generated snapshots for that path live in [docs/demo/express-happy-path](docs/demo/express-happy-path/README.md).
 
 ```bash
-npm install
-npm run build
-
 cd tests/fixtures/express
-node ../../../dist/cli.js generate
+brunogen init
+brunogen generate
 ```
 
 Expected result:
@@ -96,6 +94,29 @@ Generated 3 endpoints.
 OpenAPI: .../tests/fixtures/express/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/express/.brunogen/bruno
 ```
+
+## Go Quickstart
+
+The Go fixtures used by the test suite live in `tests/fixtures/gin`, `tests/fixtures/fiber`, and `tests/fixtures/echo`.
+The Gin fixture is the simplest place to try the current Go adapter behavior end to end.
+
+```bash
+cd tests/fixtures/gin
+brunogen init
+brunogen generate
+```
+
+Expected result:
+
+```text
+Generated 2 endpoints.
+OpenAPI: .../tests/fixtures/gin/.brunogen/openapi.yaml
+Bruno: .../tests/fixtures/gin/.brunogen/bruno
+```
+
+Go support is still experimental, so prefer Laravel or Express if you want the most complete inference today.
+
+If you are testing from this repository checkout instead of an installed package, run `npm install`, `npm run build`, and `npm link` once from the repository root first.
 
 ## Supported Patterns
 
