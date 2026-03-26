@@ -4,7 +4,7 @@
 
 Brunogen scans a Laravel, Express.js, or Go API codebase, normalizes what it finds into OpenAPI, and emits a Bruno collection you can try immediately.
 
-Early public alpha. Laravel is the primary happy path today and now has materially richer request and response inference. Express.js and Go support exist, but remain experimental and heuristic.
+Brunogen is already useful for real codebases that stay close to common framework conventions. Laravel is the strongest path today, with materially richer request and response inference. Express.js and Go support are available and improving, but still more heuristic.
 
 ## Install
 
@@ -417,27 +417,23 @@ example {
 
 ## Known Limitations
 
-- This is not production-hardened. It is an early public alpha.
-- Laravel parsing is regex-driven, not full AST analysis.
-- Express parsing is also regex-driven, not full AST analysis.
-- Complex dynamic route declarations may be skipped with warnings.
-- Complex Express router factories, metaprogrammed middleware, and indirect exports may be skipped with warnings.
-- Complex Laravel validation rules, custom rule objects, and conditional rules are not fully inferred.
-- Laravel response inference is still best-effort around cross-class service wrappers, custom responder classes, and highly dynamic resource composition.
-- Express request and response inference currently targets straightforward `req.body` / `req.query` / `req.headers` access and local `res.*()` helper wrappers.
-- Go support is intentionally labeled experimental.
-- Go route parsing can miss unusual middleware signatures or custom router abstractions.
-- Go response schemas are still best-effort around indirect helpers, nested wrappers, and custom response builders.
-- Generated Bruno auth is baseline setup, not a complete auth flow engine.
+- Brunogen is optimized for conventional code, not heavily dynamic or meta-programmed applications.
+- Laravel and Express parsing are regex-driven rather than full AST analysis, so unusual declarations can still be missed.
+- Complex route factories, indirect exports, custom router abstractions, and highly dynamic middleware composition may be skipped with warnings.
+- Complex Laravel validation rules, custom rule objects, and conditional validation are only partially inferred.
+- Laravel response inference is strongest for controller-local patterns and common resource usage; cross-class service wrappers and highly dynamic composition are still best-effort.
+- Express request and response inference is strongest for direct `req.body` / `req.query` / `req.headers` access and local `res.*()` helper wrappers.
+- Go support is still experimental, especially around indirect helpers, nested wrappers, and custom response builders.
+- Generated Bruno auth gives you a usable starting point, not a complete auth flow engine.
 
 ## Roadmap
 
-- Stabilize the Laravel path as the default demoable experience
-- Broaden and harden the Express adapter without losing the current lightweight scanner model
-- Improve Laravel and Go response inference without breaking the current OpenAPI-first pipeline
-- Broaden Laravel support for cross-class wrappers and more reusable response helper patterns
-- Reduce Go false positives and document supported code patterns more precisely
-- Add more canonical fixtures before broadening framework claims
+- Keep Laravel as the most reliable path and harden it around the patterns teams use most in real controllers
+- Push Express closer to Laravel in day-to-day usefulness without losing the current lightweight scanner model
+- Improve response inference across Laravel and Go while keeping OpenAPI as the stable internal contract
+- Broaden support for reusable wrappers and helper-driven response patterns where the code is still statically readable
+- Reduce false positives and make supported code patterns more explicit in docs and fixtures
+- Add more canonical fixtures and checked-in demos before broadening framework claims further
 
 ## Project Docs
 
