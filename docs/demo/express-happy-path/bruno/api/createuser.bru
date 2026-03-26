@@ -1,0 +1,92 @@
+meta {
+  name: createUser
+  type: http
+  seq: 2
+  tags: [
+    api
+  ]
+}
+
+post {
+  url: {{baseUrl}}/api/users
+  body: json
+  auth: bearer
+}
+
+params:query {
+  page: {{page}}
+}
+
+headers {
+  accept: application/json
+  content-type: application/json
+  X-Trace-Id: {{X-Trace-Id}}
+}
+
+auth:bearer {
+  token: {{authToken}}
+}
+
+body:json {
+  {
+    "name": "",
+    "email": "",
+    "age": ""
+  }
+}
+
+example {
+  name: "201 Response"
+  description: "Inferred JSON response"
+
+  request: {
+    url: {{baseUrl}}/api/users
+    method: post
+    mode: json
+    params:query: {
+      page: {{page}}
+    }
+
+    headers: {
+      accept: application/json
+      content-type: application/json
+      X-Trace-Id: {{X-Trace-Id}}
+    }
+
+    body:json: {
+      {
+        "name": "",
+        "email": "",
+        "age": ""
+      }
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 201
+      text: Created
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "message": "user created",
+          "data": {
+            "id": 1,
+            "name": "Jane Doe",
+            "email": "user@example.com",
+            "age": 18,
+            "page": 1,
+            "traceId": "trace_123"
+          }
+        }
+      '''
+    }
+  }
+}

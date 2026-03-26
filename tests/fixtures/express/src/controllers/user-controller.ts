@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { sendCreated } from "../responses/user-response";
+
 export async function createUser(req, res) {
   const { name, email, age = 18 } = req.body;
   const { page: currentPage = 1 } = req.query;
@@ -22,12 +24,5 @@ export function showUser(req, res) {
       id,
       name: "Jane Doe",
     },
-  });
-}
-
-function sendCreated(res, payload) {
-  return res.status(201).json({
-    message: "user created",
-    data: payload,
   });
 }

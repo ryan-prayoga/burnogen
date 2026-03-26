@@ -22,6 +22,7 @@ describe("Express adapter", () => {
       name: "X-Trace-Id",
       in: "header",
     }));
+    expect(createUser?.parameters.filter((parameter) => parameter.in === "header")).toHaveLength(1);
     expect(createUser?.responses).toContainEqual(expect.objectContaining({
       statusCode: "201",
       example: {

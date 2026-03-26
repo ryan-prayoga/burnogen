@@ -80,7 +80,8 @@ Default output:
 ## Express Quickstart
 
 The Express fixture used by the test suite lives in `tests/fixtures/express`.
-It covers mounted routers, route chains, middleware-based auth hints, request access patterns, and same-file response helper inference.
+It covers mounted routers, route chains, middleware-based auth hints, request access patterns, and local response helper inference.
+Curated generated snapshots for that path live in [docs/demo/express-happy-path](docs/demo/express-happy-path/README.md).
 
 ```bash
 npm install
@@ -152,6 +153,7 @@ return res.json({ data: { id, name } });
 return res.send("ok");
 return res.sendStatus(204);
 return sendCreated(res, payload);
+return responseHelpers.sendCreated(res, payload);
 ```
 
 ## Example Input Project Shape
@@ -405,13 +407,13 @@ example {
 | OpenAPI generation | Supported | OpenAPI is the normalized intermediate output |
 | Bruno export | Supported | Collection, requests, environments, baseline auth blocks, and response `example {}` blocks |
 | Express route scanning | Experimental | Handles `express()` / `Router()`, `use()` mounts, and `route()` chains |
-| Express handler inference | Experimental | Heuristic request and response inference from straightforward handlers and same-file response helpers |
+| Express handler inference | Experimental | Heuristic request and response inference from straightforward handlers and local response helpers |
 | Go Fiber scanning | Experimental | Route and request inference are heuristic |
 | Go Gin scanning | Experimental | Route and request inference are heuristic |
 | Go Echo scanning | Experimental | Route and request inference are heuristic |
 | Go request schema inference | Experimental | Works for straightforward bind/body-parser patterns |
 | Laravel response inference | Strong partial | Covers direct arrays, `response()->json(...)`, `noContent()`, same-controller wrapper helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths |
-| Express response inference | Partial | Straightforward `res.json()`, `res.send()`, `res.status(...).json()`, `sendStatus()`, and same-file helper wrappers |
+| Express response inference | Partial | Straightforward `res.json()`, `res.send()`, `res.status(...).json()`, `sendStatus()`, and local helper wrappers |
 | Go response inference | Limited | Response helper inference is still heuristic and often generic |
 | Watch mode | Supported | Regenerates on `.php`, `.go`, `.js`, `.cjs`, `.mjs`, and `.ts` changes |
 
@@ -424,7 +426,7 @@ example {
 - Complex Express router factories, metaprogrammed middleware, and indirect exports may be skipped with warnings.
 - Complex Laravel validation rules, custom rule objects, and conditional rules are not fully inferred.
 - Laravel response inference is still best-effort around cross-class service wrappers, custom responder classes, and highly dynamic resource composition.
-- Express request and response inference currently targets straightforward `req.body` / `req.query` / `req.headers` access and same-file `res.*()` helper wrappers.
+- Express request and response inference currently targets straightforward `req.body` / `req.query` / `req.headers` access and local `res.*()` helper wrappers.
 - Go support is intentionally labeled experimental.
 - Go route parsing can miss unusual middleware signatures or custom router abstractions.
 - Go response schemas are best-effort and often generic around nested `data` payloads.

@@ -1,0 +1,71 @@
+openapi: 3.1.0
+paths:
+  /api/users:
+    post:
+      operationId: createUser
+      summary: POST /api/users
+      tags:
+        - api
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: X-Trace-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                age:
+                  type: string
+              required:
+                - name
+                - email
+      responses:
+        "201":
+          description: Inferred JSON response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      name:
+                        type: string
+                      email:
+                        type: string
+                      age:
+                        type: integer
+                      page:
+                        type: integer
+                      traceId:
+                        type: string
+              example:
+                message: user created
+                data:
+                  id: 1
+                  name: Jane Doe
+                  email: user@example.com
+                  age: 18
+                  page: 1
+                  traceId: trace_123
+      security:
+        - bearerAuth: []

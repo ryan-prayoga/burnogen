@@ -1044,23 +1044,23 @@ function parseDestructuredField(part: string): { name: string; required: boolean
 }
 
 function extractExpressHeaders(body: string, reqName: string): NormalizedParameter[] {
-  const headers = new Set<string>();
+  const headers = new Map<string, string>();
 
   for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.(?:get|header)\\(\\s*["'\`]([^"'\\\`]+)["'\`]`, "g"))) {
     if (match[1]) {
-      headers.add(match[1]);
+      headers.set(match[1].toLowerCase(), match[1]);
     }
   }
 
   for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.headers\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`, "g"))) {
     if (match[1]) {
-      headers.add(match[1]);
+      headers.set(match[1].toLowerCase(), headers.get(match[1].toLowerCase()) ?? match[1]);
     }
   }
 
   for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)`, "g"))) {
     if (match[1]) {
-      headers.add(match[1]);
+      headers.set(match[1].toLowerCase(), headers.get(match[1].toLowerCase()) ?? match[1]);
     }
   }
 
@@ -1073,12 +1073,12 @@ function extractExpressHeaders(body: string, reqName: string): NormalizedParamet
     for (const part of splitTopLevel(destructured, ",")) {
       const field = parseDestructuredField(part);
       if (field) {
-        headers.add(field.name);
+        headers.set(field.name.toLowerCase(), headers.get(field.name.toLowerCase()) ?? field.name);
       }
     }
   }
 
-  return [...headers].map((name) => ({
+  return [...headers.values()].map((name) => ({
     name,
     in: "header",
     required: false,
@@ -1188,7 +1188,8 @@ function extractExpressHelperResponses(
       continue;
     }
 
-    const helperRecord = index.functions.get(createFunctionKey(handlerRecord.filePath, helperCall.name));
+    const helperRecord = resolveHandlerReference(helperCall.expression, handlerRecord.filePath, index)
+      ?? index.functions.get(createFunctionKey(handlerRecord.filePath, helperCall.expression));
     if (!helperRecord) {
       continue;
     }
@@ -1214,8 +1215,8 @@ function extractExpressHelperResponses(
 
 function parseExpressHelperReturnStatement(
   statement: string,
-): { name: string; args: string[]; } | undefined {
-  const match = statement.match(/^return\s+(?:await\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+): { expression: string; args: string[]; } | undefined {
+  const match = statement.match(/^return\s+(?:await\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*\(/);
   if (!match?.[1]) {
     return undefined;
   }
@@ -1227,7 +1228,7 @@ function parseExpressHelperReturnStatement(
   }
 
   return {
-    name: match[1],
+    expression: match[1],
     args: splitTopLevel(argsBlock.slice(1, -1), ","),
   };
 }

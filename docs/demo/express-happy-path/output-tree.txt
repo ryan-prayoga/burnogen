@@ -1,0 +1,10 @@
+.brunogen/
+  openapi.yaml
+  bruno/
+    bruno.json
+    api/
+      createuser.bru
+      login.bru
+      showuser.bru
+    environments/
+      local.bru
