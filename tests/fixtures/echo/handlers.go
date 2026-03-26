@@ -1,6 +1,10 @@
 package main
 
-import "github.com/labstack/echo/v4"
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+)
 
 type CreateOrderRequest struct {
 	Total      int    `json:"total" validate:"required"`
@@ -12,7 +16,16 @@ func createOrder(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
-	return nil
+
+	token := c.Request().Header.Get("TTOKEN")
+	return c.JSON(http.StatusCreated, map[string]any{
+		"message": "order created",
+		"data": map[string]any{
+			"total":      req.Total,
+			"customerId": req.CustomerID,
+			"token":      token,
+		},
+	})
 }
 
 func JWTMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

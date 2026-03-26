@@ -53,6 +53,12 @@ interface GoHandlerAnalysis {
   warnings: GenerationWarning[];
 }
 
+interface GoExampleContext {
+  assignments: Map<string, string>;
+  cache: Map<string, unknown>;
+  resolving: Set<string>;
+}
+
 const methodToResponseStatus: Record<HttpMethod, string> = {
   get: "200",
   post: "201",
@@ -679,6 +685,7 @@ function extractGoHeaderParameters(body: string): NormalizedParameter[] {
 
 function extractGoResponses(body: string): NormalizedResponse[] {
   const responses = new Map<string, NormalizedResponse>();
+  const exampleContext = createGoExampleContext(body);
 
   for (const args of extractMethodCallArguments(body, "SuccessResponse")) {
     if (args.length < 3) {
@@ -686,7 +693,7 @@ function extractGoResponses(body: string): NormalizedResponse[] {
     }
 
     const message = parseGoStringLiteral(args[1]) ?? "Success";
-    const data = buildGoExpressionExample(args[2]);
+    const data = buildGoExpressionExample(args[2], exampleContext);
     responses.set("200", buildResponseWrapper("200", message, data, ""));
   }
 
@@ -701,7 +708,7 @@ function extractGoResponses(body: string): NormalizedResponse[] {
     }
 
     const message = parseGoStringLiteral(args[2]) ?? "Error";
-    const data = buildGoExpressionExample(args[3]);
+    const data = buildGoExpressionExample(args[3], exampleContext);
     const errorDetail = parseGoStringLiteral(args[4]) ?? "Error";
     if (!responses.has(statusCode)) {
       responses.set(statusCode, buildResponseWrapper(statusCode, message, data, errorDetail));
@@ -717,6 +724,38 @@ function extractGoResponses(body: string): NormalizedResponse[] {
     const errorDetail = parseGoStringLiteral(args[2]) ?? "Internal server error";
     if (!responses.has("500")) {
       responses.set("500", buildResponseWrapper("500", message, null, errorDetail));
+    }
+  }
+
+  for (const args of extractMethodCallArguments(body, "JSON")) {
+    if (args.length < 2) {
+      continue;
+    }
+
+    const statusCode = parseGoStatusCode(args[0]) ?? "200";
+    const example = buildGoExpressionExample(args[1], exampleContext);
+    if (!responses.has(statusCode)) {
+      responses.set(statusCode, {
+        statusCode,
+        description: "Inferred JSON response",
+        contentType: "application/json",
+        schema: inferSchemaFromExample(example),
+        example,
+      });
+    }
+  }
+
+  for (const args of extractMethodCallArguments(body, "NoContent")) {
+    if (args.length < 1) {
+      continue;
+    }
+
+    const statusCode = parseGoStatusCode(args[0]) ?? "204";
+    if (!responses.has(statusCode)) {
+      responses.set(statusCode, {
+        statusCode,
+        description: "Inferred empty response",
+      });
     }
   }
 
@@ -818,7 +857,17 @@ function parseGoStatusCode(expression: string): string | undefined {
     "fiber.StatusUnauthorized": "401",
     "fiber.StatusForbidden": "403",
     "fiber.StatusNotFound": "404",
+    "fiber.StatusCreated": "201",
     "fiber.StatusInternalServerError": "500",
+    "http.StatusOK": "200",
+    "http.StatusCreated": "201",
+    "http.StatusNoContent": "204",
+    "http.StatusBadRequest": "400",
+    "http.StatusUnauthorized": "401",
+    "http.StatusForbidden": "403",
+    "http.StatusNotFound": "404",
+    "http.StatusUnprocessableEntity": "422",
+    "http.StatusInternalServerError": "500",
   };
 
   return statusMap[trimmed];
@@ -829,7 +878,7 @@ function parseGoStringLiteral(expression: string): string | undefined {
   return match?.[1];
 }
 
-function buildGoExpressionExample(expression: string): unknown {
+function buildGoExpressionExample(expression: string, context?: GoExampleContext): unknown {
   const trimmed = expression.trim();
 
   if (trimmed === "nil") {
@@ -853,19 +902,45 @@ function buildGoExpressionExample(expression: string): unknown {
     return trimmed === "true";
   }
 
-  if (trimmed.startsWith("fiber.Map{")) {
-    const block = trimmed.slice("fiber.Map".length);
-    return parseFiberMapExample(block);
+  const requestAccessorExample = inferGoRequestAccessorExample(trimmed);
+  if (requestAccessorExample !== undefined) {
+    return requestAccessorExample;
+  }
+
+  const identifierMatch = trimmed.match(/^[A-Za-z_][A-Za-z0-9_]*$/);
+  if (identifierMatch?.[0]) {
+    const resolved = resolveGoVariableExample(identifierMatch[0], context);
+    if (resolved !== undefined) {
+      return resolved;
+    }
+  }
+
+  const selectorMatch = trimmed.match(/^[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_][A-Za-z0-9_]*)$/);
+  if (selectorMatch?.[1]) {
+    return buildGoFieldExample(selectorMatch[1]);
+  }
+
+  const mapBlock = extractGoMapLiteral(trimmed);
+  if (mapBlock) {
+    return parseGoMapExample(mapBlock, context);
   }
 
   if (/^\[\]/.test(trimmed)) {
-    return [];
+    const literalStart = trimmed.indexOf("{");
+    const arrayBlock = literalStart >= 0 ? extractBalanced(trimmed, literalStart, "{", "}") : null;
+    if (!arrayBlock) {
+      return [];
+    }
+
+    return splitTopLevel(arrayBlock.slice(1, -1), ",")
+      .filter(Boolean)
+      .map((entry) => buildGoExpressionExample(entry, context));
   }
 
   return {};
 }
 
-function parseFiberMapExample(mapBlock: string): Record<string, unknown> {
+function parseGoMapExample(mapBlock: string, context?: GoExampleContext): Record<string, unknown> {
   const block = mapBlock.trim();
   if (!block.startsWith("{") || !block.endsWith("}")) {
     return {};
@@ -883,10 +958,148 @@ function parseFiberMapExample(mapBlock: string): Record<string, unknown> {
       continue;
     }
 
-    result[key] = buildGoExpressionExample(entry.slice(separatorIndex + 1));
+    result[key] = buildGoExpressionExample(entry.slice(separatorIndex + 1), context);
   }
 
   return result;
+}
+
+function createGoExampleContext(body: string): GoExampleContext {
+  return {
+    assignments: extractGoVariableAssignments(body),
+    cache: new Map(),
+    resolving: new Set(),
+  };
+}
+
+function extractGoVariableAssignments(body: string): Map<string, string> {
+  const assignments = new Map<string, string>();
+
+  for (const match of body.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*:=\s*/g)) {
+    const variableName = match[1];
+    const startIndex = match.index ?? -1;
+    if (!variableName || startIndex < 0) {
+      continue;
+    }
+
+    const equalsIndex = body.indexOf(":=", startIndex);
+    const endIndex = findGoStatementTerminator(body, equalsIndex + 2);
+    if (equalsIndex < 0 || endIndex < 0) {
+      continue;
+    }
+
+    assignments.set(variableName, body.slice(equalsIndex + 2, endIndex).trim());
+  }
+
+  return assignments;
+}
+
+function resolveGoVariableExample(name: string, context?: GoExampleContext): unknown {
+  if (!context) {
+    return undefined;
+  }
+
+  if (context.cache.has(name)) {
+    return context.cache.get(name);
+  }
+
+  if (context.resolving.has(name)) {
+    return undefined;
+  }
+
+  const expression = context.assignments.get(name);
+  if (!expression) {
+    return undefined;
+  }
+
+  context.resolving.add(name);
+  const resolved = buildGoExpressionExample(expression, context);
+  context.resolving.delete(name);
+  context.cache.set(name, resolved);
+  return resolved;
+}
+
+function inferGoRequestAccessorExample(expression: string): unknown {
+  const queryMatch = expression.match(/\.\s*Query\(\s*"([^"]+)"/);
+  if (queryMatch?.[1]) {
+    return buildGoFieldExample(queryMatch[1]);
+  }
+
+  const paramMatch = expression.match(/\.\s*Param\(\s*"([^"]+)"/);
+  if (paramMatch?.[1]) {
+    return buildGoFieldExample(paramMatch[1]);
+  }
+
+  const headerMatch = expression.match(/\.\s*(?:Get|GetHeader)\(\s*"([^"]+)"/);
+  if (headerMatch?.[1]) {
+    return buildGoFieldExample(headerMatch[1]);
+  }
+
+  return undefined;
+}
+
+function buildGoFieldExample(fieldName: string): unknown {
+  const normalized = fieldName.trim().toLowerCase();
+
+  if (normalized.includes("email")) {
+    return "user@example.com";
+  }
+
+  if (normalized === "name") {
+    return "Jane Doe";
+  }
+
+  if (normalized.includes("customer")) {
+    return "customer_123";
+  }
+
+  if (normalized === "age" || normalized.endsWith("_age") || normalized === "total") {
+    return 1;
+  }
+
+  if (normalized === "page" || normalized.endsWith("_page")) {
+    return 1;
+  }
+
+  if (normalized === "id" || normalized.endsWith("_id")) {
+    return 1;
+  }
+
+  if (normalized.includes("token")) {
+    return fieldName === fieldName.toUpperCase() ? `${fieldName}_VALUE` : "token";
+  }
+
+  if (normalized.startsWith("is_") || normalized.startsWith("has_")) {
+    return true;
+  }
+
+  return fieldName;
+}
+
+function extractGoMapLiteral(expression: string): string | null {
+  const trimmed = expression.trim();
+
+  const mapPrefixes = [
+    "fiber.Map",
+    "gin.H",
+    "map[string]any",
+    "map[string]interface{}",
+  ];
+
+  for (const prefix of mapPrefixes) {
+    if (!trimmed.startsWith(prefix)) {
+      continue;
+    }
+
+    const literalStart = trimmed.indexOf("{", prefix.length);
+    if (literalStart < 0) {
+      continue;
+    }
+
+    return extractBalanced(trimmed, literalStart, "{", "}");
+  }
+
+  return null;
 }
 
 function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParameter[] {
@@ -1042,4 +1255,120 @@ function splitTopLevel(input: string, separator: string): string[] {
   }
 
   return results;
+}
+
+function findTopLevelStatementTerminator(input: string, startIndex: number): number {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === "\"" || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    } else if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "{") {
+      braceDepth += 1;
+    } else if (character === "}") {
+      braceDepth -= 1;
+    } else if (
+      character === ";"
+      && parenDepth === 0
+      && bracketDepth === 0
+      && braceDepth === 0
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function findGoStatementTerminator(input: string, startIndex: number): number {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | "\"" | "`" | null = null;
+  let escaped = false;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === "\"" || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    } else if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "{") {
+      braceDepth += 1;
+    } else if (character === "}") {
+      braceDepth -= 1;
+    } else if (
+      (character === "\n" || character === ";")
+      && parenDepth === 0
+      && bracketDepth === 0
+      && braceDepth === 0
+    ) {
+      return index;
+    }
+  }
+
+  return input.length;
 }
