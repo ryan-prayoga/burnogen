@@ -1,11 +1,12 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 
+import { inferBearerAuthFromMiddleware } from "../core/auth-middleware";
 import { listFiles } from "../core/fs";
 import type {
+  BrunogenConfig,
   GenerationWarning,
   HttpMethod,
-  NormalizedAuth,
   NormalizedEndpoint,
   NormalizedParameter,
   NormalizedProject,
@@ -75,6 +76,7 @@ export async function scanGoProject(
   framework: Extract<SupportedFramework, "gin" | "fiber" | "echo">,
   projectName: string,
   projectVersion: string,
+  config: BrunogenConfig,
 ): Promise<NormalizedProject> {
   const files = await loadGoFiles(root);
   const functionIndex = buildGoFunctionIndex(files);
@@ -85,7 +87,7 @@ export async function scanGoProject(
   const seenEndpoints = new Set<string>();
 
   for (const file of files) {
-    const parsed = parseRoutesFromGoFile(file, framework, functionIndex, structIndex, handlerCache, seenEndpoints);
+    const parsed = parseRoutesFromGoFile(file, framework, functionIndex, structIndex, handlerCache, seenEndpoints, config);
     endpoints.push(...parsed.endpoints);
     warnings.push(...parsed.warnings);
   }
@@ -261,6 +263,7 @@ function parseRoutesFromGoFile(
   structIndex: Map<string, GoStructRecord>,
   handlerCache: Map<string, GoHandlerAnalysis>,
   seenEndpoints: Set<string>,
+  config: BrunogenConfig,
 ): { endpoints: NormalizedEndpoint[]; warnings: GenerationWarning[]; } {
   return parseGoScope({
     filePath: file.filePath,
@@ -272,6 +275,7 @@ function parseRoutesFromGoFile(
     seedGroups: new Map(),
     seenEndpoints,
     visitedCalls: new Set(),
+    config,
   });
 }
 
@@ -285,6 +289,7 @@ function parseGoScope(input: {
   seedGroups: Map<string, GoGroupContext>;
   seenEndpoints: Set<string>;
   visitedCalls: Set<string>;
+  config: BrunogenConfig;
 }): { endpoints: NormalizedEndpoint[]; warnings: GenerationWarning[]; } {
   const {
     filePath,
@@ -296,6 +301,7 @@ function parseGoScope(input: {
     seedGroups,
     seenEndpoints,
     visitedCalls,
+    config,
   } = input;
   const endpoints: NormalizedEndpoint[] = [];
   const warnings: GenerationWarning[] = [];
@@ -370,6 +376,7 @@ function parseGoScope(input: {
               seedGroups: scopedGroups,
               seenEndpoints,
               visitedCalls: new Set([...visitedCalls, visitKey]),
+              config,
             });
             endpoints.push(...nested.endpoints);
             warnings.push(...nested.warnings);
@@ -391,6 +398,7 @@ function parseGoScope(input: {
     const fullPath = normalizeGoPath(joinRoutePath(group.prefix, routeMatch.path));
     const handlerAnalysis = analyzeGoHandler(routeMatch.handler, functionIndex, structIndex, handlerCache);
     const allMiddleware = [...group.middleware, ...extractIdentifiers(routeMatch.middleware)];
+    const authInference = inferBearerAuthFromMiddleware("Go", allMiddleware, config.auth.middlewarePatterns.bearer);
     const parameters = [
       ...extractPathParameters(fullPath),
       ...handlerAnalysis.queryParameters.filter((parameter) => !fullPath.includes(`{${parameter.name}}`)),
@@ -412,15 +420,27 @@ function parseGoScope(input: {
       parameters,
       requestBody: handlerAnalysis.requestBody,
       responses: handlerAnalysis.responses.length > 0 ? handlerAnalysis.responses : buildDefaultResponses(routeMatch.method),
-      auth: inferAuthFromMiddleware(allMiddleware),
+      auth: authInference.auth,
       source: {
         file: filePath,
         line: index + 1,
       },
-      warnings: handlerAnalysis.warnings,
+      warnings: [
+        ...handlerAnalysis.warnings,
+        ...authInference.warnings.map((warning) => ({
+          ...warning,
+          location: { file: filePath, line: index + 1 },
+        })),
+      ],
     });
 
-    warnings.push(...handlerAnalysis.warnings);
+    warnings.push(
+      ...handlerAnalysis.warnings,
+      ...authInference.warnings.map((warning) => ({
+        ...warning,
+        location: { file: filePath, line: index + 1 },
+      })),
+    );
   }
 
   return { endpoints, warnings };
@@ -846,15 +866,6 @@ function buildGoOperationId(
 
   const pathPart = pathname.replace(/[{}]/g, "").split("/").filter(Boolean).map(capitalize).join("");
   return `${route.method}${pathPart || "Root"}`;
-}
-
-function inferAuthFromMiddleware(middleware: string[]): NormalizedAuth {
-  const joined = middleware.join(" ");
-  if (/auth|jwt|token|bearer|oauth|protected/i.test(joined)) {
-    return { type: "bearer" };
-  }
-
-  return { type: "none" };
 }
 
 function inferTag(pathname: string): string {

@@ -15,7 +15,7 @@ export async function generateArtifacts(root: string, config: BrunogenConfig): P
     throw new Error(detection.warnings.map((warning) => warning.message).join("\n"));
   }
 
-  const normalized = await scanProject(root, detection.framework, detection.projectName, config.project.version);
+  const normalized = await scanProject(root, detection.framework, detection.projectName, config.project.version, config);
   const openApi = buildOpenApi(normalized, config);
   const warnings = [...detection.warnings, ...normalized.warnings];
 
@@ -128,6 +128,7 @@ async function scanProject(
   framework: SupportedFramework,
   projectName: string,
   projectVersion: string,
+  config: BrunogenConfig,
 ): Promise<NormalizedProject> {
   switch (framework) {
     case "laravel":
@@ -135,9 +136,9 @@ async function scanProject(
     case "gin":
     case "fiber":
     case "echo":
-      return scanGoProject(root, framework, projectName, projectVersion);
+      return scanGoProject(root, framework, projectName, projectVersion, config);
     case "express":
-      return scanExpressProject(root, projectName, projectVersion);
+      return scanExpressProject(root, projectName, projectVersion, config);
     default:
       throw new Error(`Unsupported framework: ${framework satisfies never}`);
   }

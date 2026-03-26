@@ -45,6 +45,11 @@ const configSchema = z.object({
     apiKeyVar: z.string().default("apiKey"),
     apiKeyName: z.string().default("X-API-Key"),
     apiKeyLocation: z.enum(["header", "query"]).default("header"),
+    middlewarePatterns: z.object({
+      bearer: z.array(z.string().min(1)).default([]),
+    }).default({
+      bearer: [],
+    }),
   }).default({
     default: "auto",
     bearerTokenVar: "authToken",
@@ -53,6 +58,9 @@ const configSchema = z.object({
     apiKeyVar: "apiKey",
     apiKeyName: "X-API-Key",
     apiKeyLocation: "header",
+    middlewarePatterns: {
+      bearer: [],
+    },
   }),
 });
 

@@ -1,11 +1,12 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
 
+import { inferBearerAuthFromMiddleware } from "../core/auth-middleware";
 import { listFiles, toPosixPath } from "../core/fs";
 import type {
+  BrunogenConfig,
   GenerationWarning,
   HttpMethod,
-  NormalizedAuth,
   NormalizedEndpoint,
   NormalizedParameter,
   NormalizedProject,
@@ -72,6 +73,12 @@ interface HandlerAnalysis {
   warnings: GenerationWarning[];
 }
 
+interface JoiFieldAnalysis {
+  name: string;
+  required: boolean;
+  schema: SchemaObject;
+}
+
 interface JsExampleContext {
   reqName: string;
   assignments: Map<string, string>;
@@ -102,6 +109,7 @@ export async function scanExpressProject(
   root: string,
   projectName: string,
   projectVersion: string,
+  config: BrunogenConfig,
 ): Promise<NormalizedProject> {
   const files = await loadExpressFiles(root);
   const fileMap = new Map(files.map((file) => [file.filePath, file]));
@@ -149,6 +157,7 @@ export async function scanExpressProject(
     collectRouterEndpoints({
       router,
       index,
+      config,
       prefix: "",
       inheritedMiddleware: [],
       visited: new Set<string>(),
@@ -719,6 +728,7 @@ function parseUseCallArguments(argsBlock: string, filePath: string, index: Proje
 function collectRouterEndpoints(input: {
   router: RouterRecord;
   index: ProjectIndex;
+  config: BrunogenConfig;
   prefix: string;
   inheritedMiddleware: string[];
   visited: Set<string>;
@@ -729,6 +739,7 @@ function collectRouterEndpoints(input: {
   const {
     router,
     index,
+    config,
     prefix,
     inheritedMiddleware,
     visited,
@@ -749,9 +760,14 @@ function collectRouterEndpoints(input: {
     const fullPath = normalizeExpressPath(joinRoutePath(prefix, route.path));
     const handlerAnalysis = analyzeExpressHandler(route.handler, route.filePath, index);
     const routeMiddleware = dedupeValues([...currentMiddleware, ...route.middleware]);
+    const authInference = inferBearerAuthFromMiddleware("Express", routeMiddleware, config.auth.middlewarePatterns.bearer);
     const routeWarnings = handlerAnalysis.warnings.map((warning) => ({
       ...warning,
       location: warning.location ?? { file: route.filePath, line: route.line },
+    }));
+    const authWarnings = authInference.warnings.map((warning) => ({
+      ...warning,
+      location: { file: route.filePath, line: route.line },
     }));
     const endpointId = `${route.method}:${fullPath}:${route.line}`;
 
@@ -760,7 +776,7 @@ function collectRouterEndpoints(input: {
     }
     seenEndpoints.add(endpointId);
 
-    endpoints.push({
+      endpoints.push({
       id: endpointId,
       method: route.method,
       path: fullPath,
@@ -776,15 +792,21 @@ function collectRouterEndpoints(input: {
       responses: handlerAnalysis.responses.length > 0
         ? handlerAnalysis.responses
         : buildDefaultResponses(route.method),
-      auth: inferAuthFromMiddleware(routeMiddleware),
+      auth: authInference.auth,
       source: {
         file: route.filePath,
         line: route.line,
       },
-      warnings: routeWarnings,
+      warnings: [
+        ...routeWarnings,
+        ...authWarnings,
+      ],
     });
 
-    warnings.push(...routeWarnings);
+    warnings.push(
+      ...routeWarnings,
+      ...authWarnings,
+    );
   }
 
   for (const mount of router.mounts) {
@@ -796,6 +818,7 @@ function collectRouterEndpoints(input: {
     collectRouterEndpoints({
       router: childRouter,
       index,
+      config,
       prefix: joinRoutePath(prefix, mount.path),
       inheritedMiddleware: dedupeValues([...currentMiddleware, ...mount.middleware]),
       visited: new Set(visited),
@@ -827,8 +850,14 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
   const reqName = handlerRecord.params[0] ?? "req";
   const resName = handlerRecord.params[1] ?? "res";
   const exampleContext = createJsExampleContext(handlerRecord.body, reqName);
-  const bodyFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body", exampleContext);
-  const queryFields = extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query", exampleContext);
+  const bodyFields = mergeExpressRequestFields(
+    extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body", exampleContext),
+    inferJoiFieldsForHandler(handlerRecord, reqName, "body", index),
+  );
+  const queryFields = mergeExpressRequestFields(
+    extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query", exampleContext),
+    inferJoiFieldsForHandler(handlerRecord, reqName, "query", index),
+  );
 
   return {
     requestBody: bodyFields.length > 0 ? {
@@ -848,6 +877,206 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
     headerParameters: extractExpressHeaders(handlerRecord.body, reqName),
     responses: extractExpressResponses(handlerRecord, resName, exampleContext, index),
     warnings: [],
+  };
+}
+
+function mergeExpressRequestFields(
+  directFields: Array<{ name: string; required: boolean; schema: SchemaObject; }>,
+  joiFields: JoiFieldAnalysis[],
+): Array<{ name: string; required: boolean; schema: SchemaObject; }> {
+  const fields = new Map<string, { name: string; required: boolean; schema: SchemaObject; }>();
+
+  for (const field of directFields) {
+    fields.set(field.name, field);
+  }
+
+  for (const field of joiFields) {
+    const existing = fields.get(field.name);
+    fields.set(field.name, {
+      name: field.name,
+      required: existing?.required || field.required,
+      schema: mergeSchemaObjects(existing?.schema, field.schema),
+    });
+  }
+
+  return [...fields.values()];
+}
+
+function mergeSchemaObjects(base: SchemaObject | undefined, override: SchemaObject): SchemaObject {
+  if (!base) {
+    return override;
+  }
+
+  return {
+    ...base,
+    ...override,
+    items: override.items ?? base.items,
+    properties: override.properties ?? base.properties,
+    required: override.required ?? base.required,
+    enum: override.enum ?? base.enum,
+  };
+}
+
+function inferJoiFieldsForHandler(
+  handlerRecord: ExpressFunctionRecord,
+  reqName: string,
+  target: "body" | "query",
+  index: ProjectIndex,
+): JoiFieldAnalysis[] {
+  const file = index.files.get(handlerRecord.filePath);
+  if (!file) {
+    return [];
+  }
+
+  const schemaNames = new Set<string>();
+  const validateRegex = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`, "g");
+  for (const match of handlerRecord.body.matchAll(validateRegex)) {
+    if (match[1]) {
+      schemaNames.add(match[1]);
+    }
+  }
+
+  const fields = new Map<string, JoiFieldAnalysis>();
+  for (const schemaName of schemaNames) {
+    for (const field of extractJoiSchemaFields(file.content, schemaName)) {
+      const existing = fields.get(field.name);
+      fields.set(field.name, {
+        name: field.name,
+        required: existing?.required || field.required,
+        schema: mergeSchemaObjects(existing?.schema, field.schema),
+      });
+    }
+  }
+
+  return [...fields.values()];
+}
+
+function extractJoiSchemaFields(content: string, schemaName: string): JoiFieldAnalysis[] {
+  const definitionRegex = new RegExp(`(?:const|let|var)\\s+${escapeRegExp(schemaName)}\\s*=\\s*[A-Za-z_][A-Za-z0-9_.]*\\s*\\.\\s*object\\s*(?:<[\\s\\S]*?>\\s*)?\\(`, "g");
+
+  for (const match of content.matchAll(definitionRegex)) {
+    const openParenIndex = content.indexOf("(", match.index ?? 0);
+    const argsBlock = openParenIndex >= 0 ? extractBalanced(content, openParenIndex, "(", ")") : null;
+    if (!argsBlock) {
+      continue;
+    }
+
+    const objectArgument = splitTopLevel(argsBlock.slice(1, -1), ",")[0]?.trim();
+    if (!objectArgument?.startsWith("{")) {
+      continue;
+    }
+
+    const objectBlock = extractBalanced(objectArgument, 0, "{", "}");
+    if (!objectBlock) {
+      continue;
+    }
+
+    const fields: JoiFieldAnalysis[] = [];
+    for (const entry of splitTopLevel(objectBlock.slice(1, -1), ",")) {
+      const property = parseObjectLiteralEntry(entry);
+      if (!property) {
+        continue;
+      }
+
+      const parsed = parseJoiFieldExpression(property.value);
+      if (!parsed) {
+        continue;
+      }
+
+      fields.push({
+        name: property.key,
+        required: parsed.required,
+        schema: parsed.schema,
+      });
+    }
+
+    return fields;
+  }
+
+  return [];
+}
+
+function parseJoiFieldExpression(expression: string): { required: boolean; schema: SchemaObject; } | null {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const schema: SchemaObject = {};
+  let required = false;
+  let baseType: SchemaObject["type"] = "string";
+
+  if (/\.array\s*\(/.test(trimmed)) {
+    baseType = "array";
+  } else if (/\.boolean\s*\(/.test(trimmed)) {
+    baseType = "boolean";
+  } else if (/\.number\s*\(/.test(trimmed)) {
+    baseType = "number";
+  } else if (/\.object\s*\(/.test(trimmed)) {
+    baseType = "object";
+  } else if (/\.string\s*\(/.test(trimmed)) {
+    baseType = "string";
+  }
+
+  schema.type = baseType;
+
+  if (/\.integer\s*\(/.test(trimmed)) {
+    schema.type = "integer";
+  }
+
+  if (/\.email\s*\(/.test(trimmed)) {
+    schema.format = "email";
+  }
+
+  const minMatch = trimmed.match(/\.min\(\s*(-?\d+)\s*\)/);
+  if (minMatch?.[1]) {
+    const minValue = Number.parseInt(minMatch[1], 10);
+    if (schema.type === "string") {
+      schema.minLength = minValue;
+    } else {
+      schema.minimum = minValue;
+    }
+  }
+
+  const maxMatch = trimmed.match(/\.max\(\s*(-?\d+)\s*\)/);
+  if (maxMatch?.[1]) {
+    const maxValue = Number.parseInt(maxMatch[1], 10);
+    if (schema.type === "string") {
+      schema.maxLength = maxValue;
+    } else {
+      schema.maximum = maxValue;
+    }
+  }
+
+  const defaultMatch = trimmed.match(/\.default\(\s*([\s\S]+?)\s*\)(?:\.|$)/);
+  if (defaultMatch?.[1]) {
+    const defaultExample = buildExampleFromJsExpression(defaultMatch[1]);
+    schema.default = defaultExample;
+  }
+
+  const validMatch = trimmed.match(/\.valid\(([\s\S]+?)\)(?:\.|$)/);
+  if (validMatch?.[1]) {
+    schema.enum = splitTopLevel(validMatch[1], ",")
+      .map((value) => buildExampleFromJsExpression(value))
+      .filter((value) => value !== undefined) as Array<string | number | boolean>;
+  }
+
+  const itemsMatch = trimmed.match(/\.items\(\s*([\s\S]+?)\s*\)(?:\.|$)/);
+  if (schema.type === "array" && itemsMatch?.[1]) {
+    schema.items = parseJoiFieldExpression(itemsMatch[1])?.schema ?? { type: "string" };
+  }
+
+  if (/\.required\s*\(/.test(trimmed)) {
+    required = true;
+  }
+
+  if (/\.optional\s*\(/.test(trimmed)) {
+    required = false;
+  }
+
+  return {
+    required,
+    schema,
   };
 }
 
@@ -1990,15 +2219,6 @@ function buildJsFieldExample(
   }
 
   return fieldName;
-}
-
-function inferAuthFromMiddleware(middleware: string[]): NormalizedAuth {
-  const joined = middleware.join(" ");
-  if (/auth|jwt|token|bearer|oauth|protected|guard|verify|authenticated/i.test(joined)) {
-    return { type: "bearer" };
-  }
-
-  return { type: "none" };
 }
 
 function buildExpressOperationId(route: RouteRecord, pathname: string): string {

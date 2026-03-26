@@ -117,6 +117,9 @@ export interface BrunogenConfig {
     apiKeyVar: string;
     apiKeyName: string;
     apiKeyLocation: "header" | "query";
+    middlewarePatterns: {
+      bearer: string[];
+    };
   };
 }
 
