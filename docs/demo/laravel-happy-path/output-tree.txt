@@ -5,6 +5,7 @@
     environments/
       local.bru
     session/
+      sessioncontrollercheck.bru
       sessioncontrollerstore.bru
     user/
       usercontrollerindex.bru

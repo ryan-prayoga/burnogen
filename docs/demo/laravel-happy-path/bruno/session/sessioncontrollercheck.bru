@@ -1,16 +1,16 @@
 meta {
-  name: usercontrollerStore
+  name: sessioncontrollerCheck
   type: http
-  seq: 4
+  seq: 2
   tags: [
-    User
+    Session
   ]
 }
 
 post {
-  url: {{baseUrl}}/api/users
+  url: {{baseUrl}}/api/login/check
   body: json
-  auth: bearer
+  auth: none
 }
 
 headers {
@@ -18,24 +18,18 @@ headers {
   content-type: application/json
 }
 
-auth:bearer {
-  token: {{authToken}}
-}
-
 body:json {
   {
-    "name": "",
-    "email": "user@example.com",
-    "age": 1
+    "enabled": true
   }
 }
 
 example {
-  name: "201 Response"
+  name: "422 Response"
   description: "Inferred JSON response"
 
   request: {
-    url: {{baseUrl}}/api/users
+    url: {{baseUrl}}/api/login/check
     method: post
     mode: json
     headers: {
@@ -45,9 +39,7 @@ example {
 
     body:json: {
       {
-        "name": "",
-        "email": "user@example.com",
-        "age": 1
+        "enabled": true
       }
     }
   }
@@ -58,19 +50,19 @@ example {
     }
 
     status: {
-      code: 201
-      text: Created
+      code: 422
+      text: "Unprocessable Entity"
     }
 
     body: {
       type: json
       content: '''
         {
-          "message": "User created",
-          "data": {
-            "id": 1,
-            "name": "Jane Doe",
-            "email": "jane@example.com"
+          "message": "Validation failed",
+          "errors": {
+            "email": [
+              "The email field is required."
+            ]
           }
         }
       '''
