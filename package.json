@@ -13,6 +13,8 @@
   "scripts": {
     "build": "tsup src/cli.ts src/index.ts --format cjs --dts --clean",
     "demo:laravel": "npm run build && node scripts/update-laravel-demo.js",
+    "demo:express": "npm run build && node scripts/update-express-demo.js",
+    "demo:go": "npm run build && node scripts/update-go-demo.js",
     "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
