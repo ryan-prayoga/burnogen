@@ -2,6 +2,9 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 
 import { listFiles } from "../core/fs";
+import { dedupeParameters, dedupeResponsesByStatusCode } from "../core/dedupe";
+import { defaultStatusForMethod } from "../core/responses";
+import { extractBalanced, splitTopLevel } from "../core/parsing";
 import type {
   GenerationWarning,
   HttpMethod,
@@ -42,16 +45,6 @@ interface ParsedHandler {
   controller?: string;
   action?: string;
 }
-
-const methodToResponseStatus: Record<HttpMethod, string> = {
-  get: "200",
-  post: "201",
-  put: "200",
-  patch: "200",
-  delete: "204",
-  head: "200",
-  options: "200",
-};
 
 export async function scanLaravelProject(
   root: string,
@@ -770,7 +763,7 @@ function inferTag(pathname: string, controller?: string): string {
 
 function buildDefaultResponses(method: HttpMethod): NormalizedResponse[] {
   return [{
-    statusCode: methodToResponseStatus[method],
+    statusCode: defaultStatusForMethod(method),
     description: "Generated default response",
   }];
 }
@@ -1551,35 +1544,10 @@ async function parseLaravelEnumValues(
     if (typeof parsed === "string" || typeof parsed === "number") {
       values.push(parsed);
     }
-  }
+   }
 
   return values;
-}
-
-function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParameter[] {
-  const seen = new Set<string>();
-  return parameters.filter((parameter) => {
-    const key = `${parameter.in}:${parameter.name}`;
-    if (seen.has(key)) {
-      return false;
-    }
-
-    seen.add(key);
-    return true;
-  });
-}
-
-function dedupeResponsesByStatusCode(responses: NormalizedResponse[]): NormalizedResponse[] {
-  const seen = new Set<string>();
-  return responses.filter((response) => {
-    if (seen.has(response.statusCode)) {
-      return false;
-    }
-
-    seen.add(response.statusCode);
-    return true;
-  });
-}
+  }
 
 function dedupeStrings(values: string[]): string[] | undefined {
   return values.length > 0 ? [...new Set(values)] : undefined;
@@ -2108,52 +2076,6 @@ function countBraceDelta(input: string): number {
   return delta;
 }
 
-function extractBalanced(input: string, startIndex: number, open: string, close: string): string | null {
-  let depth = 0;
-  let quote: "'" | "\"" | null = null;
-  let escaped = false;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (character === "'" || character === "\"") {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      continue;
-    }
-
-    if (quote) {
-      continue;
-    }
-
-    if (character === open) {
-      depth += 1;
-    }
-
-    if (character === close) {
-      depth -= 1;
-      if (depth === 0) {
-        return input.slice(startIndex, index + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
 function findTopLevelStatementTerminator(input: string, startIndex: number): number {
   let parenDepth = 0;
   let bracketDepth = 0;
@@ -2223,75 +2145,6 @@ function findTopLevelStatementTerminator(input: string, startIndex: number): num
   }
 
   return -1;
-}
-
-function splitTopLevel(input: string, separator: string): string[] {
-  const results: string[] = [];
-  let current = "";
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let braceDepth = 0;
-  let quote: "'" | "\"" | null = null;
-  let escaped = false;
-
-  for (const character of input) {
-    if (escaped) {
-      current += character;
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      current += character;
-      escaped = true;
-      continue;
-    }
-
-    if ((character === "'" || character === "\"")) {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      current += character;
-      continue;
-    }
-
-    if (!quote) {
-      if (character === "(") {
-        parenDepth += 1;
-      } else if (character === ")") {
-        parenDepth -= 1;
-      } else if (character === "[") {
-        bracketDepth += 1;
-      } else if (character === "]") {
-        bracketDepth -= 1;
-      } else if (character === "{") {
-        braceDepth += 1;
-      } else if (character === "}") {
-        braceDepth -= 1;
-      } else if (
-        character === separator &&
-        parenDepth === 0 &&
-        bracketDepth === 0 &&
-        braceDepth === 0
-      ) {
-        if (current.trim()) {
-          results.push(current.trim());
-        }
-        current = "";
-        continue;
-      }
-    }
-
-    current += character;
-  }
-
-  if (current.trim()) {
-    results.push(current.trim());
-  }
-
-  return results;
 }
 
 function splitTopLevelSequence(input: string, sequence: string): string[] {

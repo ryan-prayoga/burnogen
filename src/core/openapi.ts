@@ -5,6 +5,7 @@ import type {
   NormalizedProject,
   SchemaObject,
 } from "./model";
+import { defaultStatusForMethod } from "./responses";
 
 type OpenApiObject = Record<string, unknown>;
 
@@ -187,18 +188,6 @@ function buildSecurityRequirement(auth: NormalizedAuth): Record<string, string[]
   }
 
   return { apiKeyAuth: [] };
-}
-
-function defaultStatusForMethod(method: string): string {
-  if (method === "post") {
-    return "201";
-  }
-
-  if (method === "delete") {
-    return "204";
-  }
-
-  return "200";
 }
 
 function capitalize(input: string): string {

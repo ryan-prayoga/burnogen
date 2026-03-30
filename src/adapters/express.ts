@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 
 import { inferBearerAuthFromMiddleware } from "../core/auth-middleware";
 import { listFiles, toPosixPath } from "../core/fs";
+import { dedupeParameters, dedupeResponsesByStatusCode } from "../core/dedupe";
 import type {
   BrunogenConfig,
   GenerationWarning,
@@ -1736,19 +1737,7 @@ function extractReturnStatements(body: string): string[] {
   }
 
   return statements;
-}
-
-function dedupeResponsesByStatusCode(responses: NormalizedResponse[]): NormalizedResponse[] {
-  const seen = new Set<string>();
-  return responses.filter((response) => {
-    if (seen.has(response.statusCode)) {
-      return false;
-    }
-
-    seen.add(response.statusCode);
-    return true;
-  });
-}
+  }
 
 function inferSchemaFromJsExpression(expression: string): SchemaObject | undefined {
   const trimmed = expression.trim();
@@ -2363,18 +2352,6 @@ function extractPathParameters(pathname: string): NormalizedParameter[] {
     required: true,
     schema: { type: "string" },
   }));
-}
-
-function dedupeParameters(parameters: NormalizedParameter[]): NormalizedParameter[] {
-  const seen = new Set<string>();
-  return parameters.filter((parameter) => {
-    const key = `${parameter.in}:${parameter.name}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
 }
 
 function inferTag(pathname: string): string {
