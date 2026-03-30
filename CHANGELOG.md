@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.4.1
+*Released: 2026-03-30*
+
+- Align `doctor` path resolution with config-root behavior used by `generate`, including explicit `--config` handling
+- Add regression coverage for `doctor` with explicit config location resolution
+- Add Express and Go demo refresh scripts (`demo:express`, `demo:go`) and update release/contributor docs accordingly
+- Refresh Go demo snapshot coverage with a dedicated test and synced fixture snippets
+- Sync README/demo quickstart endpoint counts and config contract docs with current generated output
+
 ## v0.4.0
 *Released: 2026-03-27*
 
