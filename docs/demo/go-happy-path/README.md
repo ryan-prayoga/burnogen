@@ -17,7 +17,7 @@ brunogen generate
 Expected result:
 
 ```text
-Generated 2 endpoints.
+Generated 8 endpoints.
 OpenAPI: .../tests/fixtures/gin/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/gin/.brunogen/bruno
 ```

@@ -6,7 +6,7 @@ Initial contract for `brunogen`:
 
 - Config contract:
   - `version`: currently `1`
-  - `framework`: `auto | laravel | gin | fiber | echo`
+  - `framework`: `auto | laravel | gin | fiber | echo | express`
   - `inputRoot`: source project root, defaults to `.`
   - `output.openapiFile`: normalized OpenAPI output path
   - `output.brunoDir`: generated Bruno collection directory

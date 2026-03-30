@@ -126,10 +126,16 @@ brunogen init
 brunogen generate
 ```
 
+To refresh the checked-in Express demo snapshots after an intentional output change:
+
+```bash
+npm run demo:express
+```
+
 Expected result:
 
 ```text
-Generated 3 endpoints.
+Generated 13 endpoints.
 OpenAPI: .../tests/fixtures/express/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/express/.brunogen/bruno
 ```
@@ -146,10 +152,16 @@ brunogen init
 brunogen generate
 ```
 
+To refresh the checked-in Go demo snapshots after an intentional output change:
+
+```bash
+npm run demo:go
+```
+
 Expected result:
 
 ```text
-Generated 2 endpoints.
+Generated 8 endpoints.
 OpenAPI: .../tests/fixtures/gin/.brunogen/openapi.yaml
 Bruno: .../tests/fixtures/gin/.brunogen/bruno
 ```
@@ -475,27 +487,27 @@ example {
 
 ## Support Matrix
 
-| Area | Status | Notes |
-| --- | --- | --- |
-| Laravel route scanning | Supported | Reads `routes/*.php` declarations |
-| Laravel route groups and prefixes | Supported | Handles common `prefix`, `middleware`, and grouped routes |
-| Laravel `apiResource` expansion | Supported | Common REST actions are expanded |
-| Laravel FormRequest inference | Partial | `rules()` arrays are supported; complex dynamic rules are not |
-| Laravel manual request inference | Strong partial | Common `query`, `header`, `input`, typed accessors, `has`, `filled`, `only([...])`, `safe()->only([...])`, and `enum(...)` patterns are inferred |
-| Laravel inline validation inference | Partial | Simple `$request->validate()` and `Validator::make()` arrays |
-| Auth inference | Partial | Middleware and OpenAPI security are inferred heuristically |
-| OpenAPI generation | Supported | OpenAPI is the normalized intermediate output |
-| Bruno export | Supported | Collection, requests, environments, baseline auth blocks, and response `example {}` blocks |
-| Express route scanning | Experimental | Handles `express()` / `Router()`, `use()` mounts, and `route()` chains |
-| Express handler inference | Experimental | Heuristic request and response inference from straightforward handlers and local response helpers |
-| Go Fiber scanning | Experimental | Route and request inference are heuristic |
-| Go Gin scanning | Experimental | Route and request inference are heuristic |
-| Go Echo scanning | Experimental | Route and request inference are heuristic |
-| Go request schema inference | Experimental | Works for straightforward bind/body-parser patterns |
-| Laravel response inference | Strong partial | Covers direct arrays, `response()->json(...)`, `noContent()`, same-controller wrapper helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths |
-| Express response inference | Partial | Straightforward `res.json()`, `res.send()`, `res.status(...).json()`, `sendStatus()`, and local helper wrappers |
-| Go response inference | Partial | Covers common direct JSON responses plus existing helper-based patterns, but remains heuristic |
-| Watch mode | Supported | Regenerates on `.php`, `.go`, `.js`, `.cjs`, `.mjs`, and `.ts` changes |
+| Area                                | Status         | Notes                                                                                                                                                                      |
+| ----------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Laravel route scanning              | Supported      | Reads `routes/*.php` declarations                                                                                                                                          |
+| Laravel route groups and prefixes   | Supported      | Handles common `prefix`, `middleware`, and grouped routes                                                                                                                  |
+| Laravel `apiResource` expansion     | Supported      | Common REST actions are expanded                                                                                                                                           |
+| Laravel FormRequest inference       | Partial        | `rules()` arrays are supported; complex dynamic rules are not                                                                                                              |
+| Laravel manual request inference    | Strong partial | Common `query`, `header`, `input`, typed accessors, `has`, `filled`, `only([...])`, `safe()->only([...])`, and `enum(...)` patterns are inferred                           |
+| Laravel inline validation inference | Partial        | Simple `$request->validate()` and `Validator::make()` arrays                                                                                                               |
+| Auth inference                      | Partial        | Middleware and OpenAPI security are inferred heuristically                                                                                                                 |
+| OpenAPI generation                  | Supported      | OpenAPI is the normalized intermediate output                                                                                                                              |
+| Bruno export                        | Supported      | Collection, requests, environments, baseline auth blocks, and response `example {}` blocks                                                                                 |
+| Express route scanning              | Experimental   | Handles `express()` / `Router()`, `use()` mounts, and `route()` chains                                                                                                     |
+| Express handler inference           | Experimental   | Heuristic request and response inference from straightforward handlers and local response helpers                                                                          |
+| Go Fiber scanning                   | Experimental   | Route and request inference are heuristic                                                                                                                                  |
+| Go Gin scanning                     | Experimental   | Route and request inference are heuristic                                                                                                                                  |
+| Go Echo scanning                    | Experimental   | Route and request inference are heuristic                                                                                                                                  |
+| Go request schema inference         | Experimental   | Works for straightforward bind/body-parser patterns                                                                                                                        |
+| Laravel response inference          | Strong partial | Covers direct arrays, `response()->json(...)`, `noContent()`, same-controller wrapper helpers, `JsonResource`, `->additional(...)`, and common abort/error/not-found paths |
+| Express response inference          | Partial        | Straightforward `res.json()`, `res.send()`, `res.status(...).json()`, `sendStatus()`, and local helper wrappers                                                            |
+| Go response inference               | Partial        | Covers common direct JSON responses plus existing helper-based patterns, but remains heuristic                                                                             |
+| Watch mode                          | Supported      | Regenerates on `.php`, `.go`, `.js`, `.cjs`, `.mjs`, and `.ts` changes                                                                                                     |
 
 ## Known Limitations
 

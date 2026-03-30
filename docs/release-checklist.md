@@ -8,6 +8,8 @@
   `cd tests/fixtures/laravel && node ../../../dist/cli.js generate`
 - If output changed intentionally, refresh and review the checked-in demo snapshots:
   `npm run demo:laravel`
+  `npm run demo:express`
+  `npm run demo:go`
 - Review README for accuracy against current behavior
 - Review support matrix and known limitations for honesty
 - Confirm `CHANGELOG.md` reflects the release scope
