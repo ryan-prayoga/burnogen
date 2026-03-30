@@ -5,28 +5,43 @@ import path from "node:path";
 import { Command } from "commander";
 import packageJson from "../package.json";
 
-import { loadConfig, renderDefaultConfigFile, resolveFromConfigRoot } from "./core/config";
+import {
+  loadConfig,
+  renderDefaultConfigFile,
+  resolveFromConfigRoot,
+} from "./core/config";
 import { fileExists, writeTextFile } from "./core/fs";
 import { runDoctor } from "./core/doctor";
-import { collectOpenApiConsistencyWarnings, formatWarnings, generateArtifacts, validateOpenApi, writeArtifacts } from "./core/pipeline";
+import {
+  collectOpenApiConsistencyWarnings,
+  formatWarnings,
+  generateArtifacts,
+  validateOpenApi,
+  writeArtifacts,
+} from "./core/pipeline";
 
 const program = new Command();
 
 program
   .name("brunogen")
-  .description("Generate Bruno collections from Laravel, Express.js, and Go API source code.")
+  .description(
+    "Generate Bruno collections from Laravel, Express.js, and Go API source code.",
+  )
   .version(packageJson.version);
 
-program.command("init")
+program
+  .command("init")
   .description("Create a brunogen config file in the current directory.")
   .option("-f, --force", "overwrite an existing config file")
-  .action(async (options: { force?: boolean; }) => {
+  .action(async (options: { force?: boolean }) => {
     const cwd = process.cwd();
     const configFile = path.join(cwd, "brunogen.config.json");
     const exists = await fileExists(configFile);
 
     if (exists && !options.force) {
-      console.error(`Config already exists at ${configFile}. Use --force to overwrite it.`);
+      console.error(
+        `Config already exists at ${configFile}. Use --force to overwrite it.`,
+      );
       process.exitCode = 1;
       return;
     }
@@ -35,23 +50,39 @@ program.command("init")
     console.log(`Created ${configFile}`);
   });
 
-program.command("generate")
-  .description("Scan the current project and generate OpenAPI plus a Bruno collection.")
+program
+  .command("generate")
+  .description(
+    "Scan the current project and generate OpenAPI plus a Bruno collection.",
+  )
   .option("-c, --config <path>", "path to brunogen config")
-  .action(async (options: { config?: string; }) => {
+  .action(async (options: { config?: string }) => {
     await runGenerate(options.config);
   });
 
-program.command("watch")
+program
+  .command("watch")
   .description("Watch the current project and regenerate on source changes.")
   .option("-c, --config <path>", "path to brunogen config")
-  .action(async (options: { config?: string; }) => {
+  .action(async (options: { config?: string }) => {
     const chokidar = await import("chokidar");
     const cwd = process.cwd();
     const { config, configPath } = await loadConfig(cwd, options.config);
-    const projectRoot = resolveFromConfigRoot(configPath, config.inputRoot, cwd);
-    const openApiPath = resolveFromConfigRoot(configPath, config.output.openapiFile, cwd);
-    const brunoDir = resolveFromConfigRoot(configPath, config.output.brunoDir, cwd);
+    const projectRoot = resolveFromConfigRoot(
+      configPath,
+      config.inputRoot,
+      cwd,
+    );
+    const openApiPath = resolveFromConfigRoot(
+      configPath,
+      config.output.openapiFile,
+      cwd,
+    );
+    const brunoDir = resolveFromConfigRoot(
+      configPath,
+      config.output.brunoDir,
+      cwd,
+    );
     const watchPaths = [
       path.join(projectRoot, "**/*.php"),
       path.join(projectRoot, "**/*.go"),
@@ -69,10 +100,17 @@ program.command("watch")
     const rerun = async () => {
       try {
         const artifacts = await generateArtifacts(projectRoot, config);
-        const validationWarnings = await collectValidationWarnings(artifacts.openApi);
+        const validationWarnings = await collectValidationWarnings(
+          artifacts.openApi,
+        );
         await writeArtifacts(artifacts, config, openApiPath, brunoDir);
-        console.log(`[${new Date().toISOString()}] generated ${artifacts.normalized.endpoints.length} endpoints`);
-        for (const line of [...formatWarnings(artifacts.warnings), ...validationWarnings]) {
+        console.log(
+          `[${new Date().toISOString()}] generated ${artifacts.normalized.endpoints.length} endpoints`,
+        );
+        for (const line of [
+          ...formatWarnings(artifacts.warnings),
+          ...validationWarnings,
+        ]) {
           console.warn(line);
         }
       } catch (error) {
@@ -103,18 +141,25 @@ program.command("watch")
     console.log("Watching for changes...");
   });
 
-program.command("validate")
+program
+  .command("validate")
   .description("Validate generated OpenAPI output for the current project.")
   .option("-c, --config <path>", "path to brunogen config")
-  .action(async (options: { config?: string; }) => {
+  .action(async (options: { config?: string }) => {
     const cwd = process.cwd();
     const { config, configPath } = await loadConfig(cwd, options.config);
-    const projectRoot = resolveFromConfigRoot(configPath, config.inputRoot, cwd);
+    const projectRoot = resolveFromConfigRoot(
+      configPath,
+      config.inputRoot,
+      cwd,
+    );
 
     try {
       const artifacts = await generateArtifacts(projectRoot, config);
       await validateOpenApi(artifacts.openApi);
-      const consistencyWarnings = collectOpenApiConsistencyWarnings(artifacts.openApi);
+      const consistencyWarnings = collectOpenApiConsistencyWarnings(
+        artifacts.openApi,
+      );
       if (consistencyWarnings.length > 0) {
         for (const line of consistencyWarnings) {
           console.error(line);
@@ -122,7 +167,9 @@ program.command("validate")
         process.exitCode = 1;
         return;
       }
-      console.log(`OpenAPI valid. ${artifacts.normalized.endpoints.length} endpoints scanned.`);
+      console.log(
+        `OpenAPI valid. ${artifacts.normalized.endpoints.length} endpoints scanned.`,
+      );
       for (const line of formatWarnings(artifacts.warnings)) {
         console.warn(line);
       }
@@ -132,10 +179,11 @@ program.command("validate")
     }
   });
 
-program.command("doctor")
+program
+  .command("doctor")
   .description("Show brunogen environment and framework detection details.")
   .option("-c, --config <path>", "path to brunogen config")
-  .action(async (options: { config?: string; }) => {
+  .action(async (options: { config?: string }) => {
     const cwd = process.cwd();
     const { config, configPath } = await loadConfig(cwd, options.config);
     const result = await runDoctor(cwd, config, configPath);
@@ -150,19 +198,34 @@ async function runGenerate(configFile?: string): Promise<void> {
   const cwd = process.cwd();
   const { config, configPath } = await loadConfig(cwd, configFile);
   const projectRoot = resolveFromConfigRoot(configPath, config.inputRoot, cwd);
-  const openApiPath = resolveFromConfigRoot(configPath, config.output.openapiFile, cwd);
-  const brunoDir = resolveFromConfigRoot(configPath, config.output.brunoDir, cwd);
+  const openApiPath = resolveFromConfigRoot(
+    configPath,
+    config.output.openapiFile,
+    cwd,
+  );
+  const brunoDir = resolveFromConfigRoot(
+    configPath,
+    config.output.brunoDir,
+    cwd,
+  );
 
   try {
     const artifacts = await generateArtifacts(projectRoot, config);
-    const validationWarnings = await collectValidationWarnings(artifacts.openApi);
+    const validationWarnings = await collectValidationWarnings(
+      artifacts.openApi,
+    );
     await writeArtifacts(artifacts, config, openApiPath, brunoDir);
 
-    console.log(`Generated ${artifacts.normalized.endpoints.length} endpoints.`);
+    console.log(
+      `Generated ${artifacts.normalized.endpoints.length} endpoints.`,
+    );
     console.log(`OpenAPI: ${openApiPath}`);
     console.log(`Bruno: ${brunoDir}`);
 
-    for (const line of [...formatWarnings(artifacts.warnings), ...validationWarnings]) {
+    for (const line of [
+      ...formatWarnings(artifacts.warnings),
+      ...validationWarnings,
+    ]) {
       console.warn(line);
     }
   } catch (error) {
@@ -171,12 +234,16 @@ async function runGenerate(configFile?: string): Promise<void> {
   }
 }
 
-async function collectValidationWarnings(openApi: Record<string, unknown>): Promise<string[]> {
+async function collectValidationWarnings(
+  openApi: Record<string, unknown>,
+): Promise<string[]> {
   try {
     await validateOpenApi(openApi);
     return collectOpenApiConsistencyWarnings(openApi);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return [`[OPENAPI_VALIDATION_FAILED] OpenAPI validation failed, but partial artifacts were still written. ${message}`];
+    return [
+      `[OPENAPI_VALIDATION_FAILED] OpenAPI validation failed, but partial artifacts were still written. ${message}`,
+    ];
   }
 }

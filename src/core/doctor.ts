@@ -16,10 +16,18 @@ export async function runDoctor(
   config: BrunogenConfig,
   explicitConfigPath?: string | null,
 ): Promise<DoctorResult> {
-  const configPath = explicitConfigPath ?? await findConfigFile(cwd);
+  const configPath = explicitConfigPath ?? (await findConfigFile(cwd));
   const projectRoot = resolveFromConfigRoot(configPath, config.inputRoot, cwd);
-  const openApiOutputPath = resolveFromConfigRoot(configPath, config.output.openapiFile, cwd);
-  const brunoOutputPath = resolveFromConfigRoot(configPath, config.output.brunoDir, cwd);
+  const openApiOutputPath = resolveFromConfigRoot(
+    configPath,
+    config.output.openapiFile,
+    cwd,
+  );
+  const brunoOutputPath = resolveFromConfigRoot(
+    configPath,
+    config.output.brunoDir,
+    cwd,
+  );
   const detection = await detectFramework(projectRoot, config.framework);
 
   const lines = [
@@ -29,15 +37,13 @@ export async function runDoctor(
     `framework: ${detection.framework ?? "not detected"}`,
     `openapi output: ${openApiOutputPath}`,
     `bruno output: ${brunoOutputPath}`,
-    `artisan: ${await fileExists(path.join(projectRoot, "artisan")) ? "yes" : "no"}`,
-    `go.mod: ${await fileExists(path.join(projectRoot, "go.mod")) ? "yes" : "no"}`,
-    `package.json: ${await fileExists(path.join(projectRoot, "package.json")) ? "yes" : "no"}`,
+    `artisan: ${(await fileExists(path.join(projectRoot, "artisan"))) ? "yes" : "no"}`,
+    `go.mod: ${(await fileExists(path.join(projectRoot, "go.mod"))) ? "yes" : "no"}`,
+    `package.json: ${(await fileExists(path.join(projectRoot, "package.json"))) ? "yes" : "no"}`,
     `configured bearer middleware hints: ${config.auth.middlewarePatterns.bearer.length > 0 ? config.auth.middlewarePatterns.bearer.join(", ") : "none"}`,
   ];
 
-  let artifacts:
-    | Awaited<ReturnType<typeof generateArtifacts>>
-    | undefined;
+  let artifacts: Awaited<ReturnType<typeof generateArtifacts>> | undefined;
 
   if (detection.framework) {
     try {
@@ -45,16 +51,22 @@ export async function runDoctor(
       lines.push(`endpoints scanned: ${artifacts.normalized.endpoints.length}`);
       lines.push(`inference warnings: ${artifacts.warnings.length}`);
     } catch (error) {
-      lines.push(`scan error: ${error instanceof Error ? error.message : String(error)}`);
+      lines.push(
+        `scan error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   if (detection.framework === "express") {
-    lines.push(...await collectExpressDoctorLines(projectRoot, artifacts));
+    lines.push(...(await collectExpressDoctorLines(projectRoot, artifacts)));
   }
 
-  if (detection.framework === "gin" || detection.framework === "fiber" || detection.framework === "echo") {
-    lines.push(...await collectGoDoctorLines(projectRoot, artifacts));
+  if (
+    detection.framework === "gin" ||
+    detection.framework === "fiber" ||
+    detection.framework === "echo"
+  ) {
+    lines.push(...(await collectGoDoctorLines(projectRoot, artifacts)));
   }
 
   for (const warning of detection.warnings) {
@@ -78,7 +90,10 @@ async function collectExpressDoctorLines(
         dependencies?: Record<string, string>;
         devDependencies?: Record<string, string>;
       }>(packageJsonPath);
-      hasExpressDependency = Boolean(packageJson.dependencies?.express || packageJson.devDependencies?.express);
+      hasExpressDependency = Boolean(
+        packageJson.dependencies?.express ||
+        packageJson.devDependencies?.express,
+      );
     } catch {
       hasExpressDependency = false;
     }
@@ -92,15 +107,28 @@ async function collectExpressDoctorLines(
   }
 
   lines.push(`express dependency: ${hasExpressDependency ? "yes" : "no"}`);
-  lines.push(`express route dirs: ${presentRouteDirs.length > 0 ? presentRouteDirs.join(", ") : "not found"}`);
+  lines.push(
+    `express route dirs: ${presentRouteDirs.length > 0 ? presentRouteDirs.join(", ") : "not found"}`,
+  );
 
   if (artifacts) {
-    const skippedHandlers = artifacts.warnings.filter((warning) => warning.code === "EXPRESS_HANDLER_NOT_FOUND").length;
-    const unknownAuthMiddleware = collectWarningSubjects(artifacts.warnings, "EXPRESS_AUTH_MIDDLEWARE_UNKNOWN");
-    lines.push(`express handlers inferred: ${Math.max(artifacts.normalized.endpoints.length - skippedHandlers, 0)}`);
+    const skippedHandlers = artifacts.warnings.filter(
+      (warning) => warning.code === "EXPRESS_HANDLER_NOT_FOUND",
+    ).length;
+    const unknownAuthMiddleware = collectWarningSubjects(
+      artifacts.warnings,
+      "EXPRESS_AUTH_MIDDLEWARE_UNKNOWN",
+    );
+    lines.push(
+      `express handlers inferred: ${Math.max(artifacts.normalized.endpoints.length - skippedHandlers, 0)}`,
+    );
     lines.push(`express handlers skipped: ${skippedHandlers}`);
-    lines.push(`express auth middleware warnings: ${unknownAuthMiddleware.length}`);
-    lines.push(`express unknown auth middleware: ${unknownAuthMiddleware.length > 0 ? unknownAuthMiddleware.join(", ") : "none"}`);
+    lines.push(
+      `express auth middleware warnings: ${unknownAuthMiddleware.length}`,
+    );
+    lines.push(
+      `express unknown auth middleware: ${unknownAuthMiddleware.length > 0 ? unknownAuthMiddleware.join(", ") : "none"}`,
+    );
   }
 
   return lines;
@@ -133,25 +161,36 @@ async function collectGoDoctorLines(
     if (content.includes("github.com/labstack/echo")) {
       echoImports += 1;
     }
-    structCount += [...content.matchAll(/\btype\s+[A-Za-z_][A-Za-z0-9_]*\s+struct\b/g)].length;
+    structCount += [
+      ...content.matchAll(/\btype\s+[A-Za-z_][A-Za-z0-9_]*\s+struct\b/g),
+    ].length;
   }
 
-  lines.push(`go framework imports: gin=${ginImports} fiber=${fiberImports} echo=${echoImports}`);
+  lines.push(
+    `go framework imports: gin=${ginImports} fiber=${fiberImports} echo=${echoImports}`,
+  );
   lines.push(`go structs detected: ${structCount}`);
 
   if (artifacts) {
-    const inferenceWarnings = artifacts.warnings.filter((warning) => warning.code.startsWith("GO_")).length;
-    const unknownAuthMiddleware = collectWarningSubjects(artifacts.warnings, "GO_AUTH_MIDDLEWARE_UNKNOWN");
+    const inferenceWarnings = artifacts.warnings.filter((warning) =>
+      warning.code.startsWith("GO_"),
+    ).length;
+    const unknownAuthMiddleware = collectWarningSubjects(
+      artifacts.warnings,
+      "GO_AUTH_MIDDLEWARE_UNKNOWN",
+    );
     lines.push(`go inference warnings: ${inferenceWarnings}`);
     lines.push(`go auth middleware warnings: ${unknownAuthMiddleware.length}`);
-    lines.push(`go unknown auth middleware: ${unknownAuthMiddleware.length > 0 ? unknownAuthMiddleware.join(", ") : "none"}`);
+    lines.push(
+      `go unknown auth middleware: ${unknownAuthMiddleware.length > 0 ? unknownAuthMiddleware.join(", ") : "none"}`,
+    );
   }
 
   return lines;
 }
 
 function collectWarningSubjects(
-  warnings: Array<{ code: string; message: string; }>,
+  warnings: Array<{ code: string; message: string }>,
   code: string,
 ): string[] {
   const subjects = warnings
