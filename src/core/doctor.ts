@@ -2,7 +2,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 
 import { detectFramework } from "./framework";
-import { findConfigFile } from "./config";
+import { findConfigFile, resolveFromConfigRoot } from "./config";
 import { fileExists, listFiles, readJsonFile } from "./fs";
 import { generateArtifacts } from "./pipeline";
 import type { BrunogenConfig } from "./model";
@@ -11,9 +11,15 @@ export interface DoctorResult {
   lines: string[];
 }
 
-export async function runDoctor(cwd: string, config: BrunogenConfig): Promise<DoctorResult> {
-  const configPath = await findConfigFile(cwd);
-  const projectRoot = path.resolve(cwd, config.inputRoot);
+export async function runDoctor(
+  cwd: string,
+  config: BrunogenConfig,
+  explicitConfigPath?: string | null,
+): Promise<DoctorResult> {
+  const configPath = explicitConfigPath ?? await findConfigFile(cwd);
+  const projectRoot = resolveFromConfigRoot(configPath, config.inputRoot, cwd);
+  const openApiOutputPath = resolveFromConfigRoot(configPath, config.output.openapiFile, cwd);
+  const brunoOutputPath = resolveFromConfigRoot(configPath, config.output.brunoDir, cwd);
   const detection = await detectFramework(projectRoot, config.framework);
 
   const lines = [
@@ -21,8 +27,8 @@ export async function runDoctor(cwd: string, config: BrunogenConfig): Promise<Do
     `config: ${configPath ?? "not found (using defaults)"}`,
     `project root: ${projectRoot}`,
     `framework: ${detection.framework ?? "not detected"}`,
-    `openapi output: ${path.resolve(projectRoot, config.output.openapiFile)}`,
-    `bruno output: ${path.resolve(projectRoot, config.output.brunoDir)}`,
+    `openapi output: ${openApiOutputPath}`,
+    `bruno output: ${brunoOutputPath}`,
     `artisan: ${await fileExists(path.join(projectRoot, "artisan")) ? "yes" : "no"}`,
     `go.mod: ${await fileExists(path.join(projectRoot, "go.mod")) ? "yes" : "no"}`,
     `package.json: ${await fileExists(path.join(projectRoot, "package.json")) ? "yes" : "no"}`,

@@ -137,8 +137,8 @@ program.command("doctor")
   .option("-c, --config <path>", "path to brunogen config")
   .action(async (options: { config?: string; }) => {
     const cwd = process.cwd();
-    const { config } = await loadConfig(cwd, options.config);
-    const result = await runDoctor(cwd, config);
+    const { config, configPath } = await loadConfig(cwd, options.config);
+    const result = await runDoctor(cwd, config, configPath);
     for (const line of result.lines) {
       console.log(line);
     }
