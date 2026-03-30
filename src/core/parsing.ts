@@ -136,3 +136,29 @@ export function splitTopLevel(input: string, separator: string): string[] {
 
   return results;
 }
+
+/**
+ * Escapes regular-expression metacharacters in a string.
+ *
+ * @param value - Raw string that may contain regex control characters
+ * @returns A regex-safe escaped string
+ */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Splits a string at the first occurrence of `separator`.
+ *
+ * @param input - Source string
+ * @param separator - Delimiter to split on once
+ * @returns Tuple of [left, right], where right is undefined when separator is absent
+ */
+export function splitOnce(input: string, separator: string): [string, string | undefined] {
+  const index = input.indexOf(separator);
+  if (index < 0) {
+    return [input, undefined];
+  }
+
+  return [input.slice(0, index), input.slice(index + separator.length)];
+}

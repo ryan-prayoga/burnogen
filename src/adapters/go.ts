@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import { inferBearerAuthFromMiddleware } from "../core/auth-middleware";
 import { listFiles } from "../core/fs";
 import { dedupeParameters } from "../core/dedupe";
-import { extractBalanced, splitTopLevel } from "../core/parsing";
+import { escapeRegExp, extractBalanced, splitOnce, splitTopLevel } from "../core/parsing";
 import type {
   BrunogenConfig,
   GenerationWarning,
@@ -1511,19 +1511,6 @@ function normalizeGoFieldName(input: string): string {
 
 function capitalize(input: string): string {
   return input ? `${input[0].toUpperCase()}${input.slice(1)}` : input;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function splitOnce(input: string, separator: string): [string, string | undefined] {
-  const index = input.indexOf(separator);
-  if (index < 0) {
-    return [input, undefined];
-  }
-
-  return [input.slice(0, index), input.slice(index + separator.length)];
 }
 
 function findTopLevelStatementTerminator(input: string, startIndex: number): number {

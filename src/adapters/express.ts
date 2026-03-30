@@ -4,7 +4,7 @@ import { promises as fs } from "node:fs";
 import { inferBearerAuthFromMiddleware } from "../core/auth-middleware";
 import { listFiles, toPosixPath } from "../core/fs";
 import { dedupeParameters, dedupeResponsesByStatusCode } from "../core/dedupe";
-import { extractBalanced, splitTopLevel } from "../core/parsing";
+import { escapeRegExp, extractBalanced, splitOnce, splitTopLevel } from "../core/parsing";
 import type {
   BrunogenConfig,
   GenerationWarning,
@@ -96,7 +96,15 @@ interface ProjectIndex {
   routers: Map<string, RouterRecord>;
 }
 
-const httpMethods: HttpMethod[] = ["get", "post", "put", "patch", "delete", "head", "options"];
+const httpMethods: HttpMethod[] = [
+  "get",
+  "post",
+  "put",
+  "patch",
+  "delete",
+  "head",
+  "options",
+];
 const defaultStatusByMethod: Record<HttpMethod, string> = {
   get: "200",
   post: "201",
@@ -153,7 +161,9 @@ export async function scanExpressProject(
   const endpoints: NormalizedEndpoint[] = [];
   const warnings: GenerationWarning[] = [];
   const seenEndpoints = new Set<string>();
-  const roots = [...routers.values()].filter((router) => router.kind === "app" || !incomingRouters.has(router.key));
+  const roots = [...routers.values()].filter(
+    (router) => router.kind === "app" || !incomingRouters.has(router.key),
+  );
 
   for (const router of roots) {
     collectRouterEndpoints({
@@ -181,7 +191,8 @@ export async function scanExpressProject(
 async function loadExpressFiles(root: string): Promise<ExpressFile[]> {
   const filePaths = await listFiles(
     root,
-    (filePath) => /\.(?:[cm]?js|ts)$/.test(filePath) && !filePath.endsWith(".d.ts"),
+    (filePath) =>
+      /\.(?:[cm]?js|ts)$/.test(filePath) && !filePath.endsWith(".d.ts"),
     { ignoreDirectories: ["node_modules", ".git", "dist", "coverage"] },
   );
 
@@ -196,10 +207,15 @@ async function loadExpressFiles(root: string): Promise<ExpressFile[]> {
   return files;
 }
 
-function parseImports(file: ExpressFile, knownFiles: Set<string>): Map<string, ImportBinding> {
+function parseImports(
+  file: ExpressFile,
+  knownFiles: Set<string>,
+): Map<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>();
 
-  for (const match of file.content.matchAll(/import\s+([\s\S]+?)\s+from\s+["'](.+?)["']/g)) {
+  for (const match of file.content.matchAll(
+    /import\s+([\s\S]+?)\s+from\s+["'](.+?)["']/g,
+  )) {
     const rawBindings = match[1]?.trim();
     const source = match[2];
     if (!rawBindings || !source?.startsWith(".")) {
@@ -252,7 +268,9 @@ function parseImports(file: ExpressFile, knownFiles: Set<string>): Map<string, I
     }
   }
 
-  for (const match of file.content.matchAll(/const\s+\{\s*([^}]+)\s*\}\s*=\s*require\(\s*["'](.+?)["']\s*\)/g)) {
+  for (const match of file.content.matchAll(
+    /const\s+\{\s*([^}]+)\s*\}\s*=\s*require\(\s*["'](.+?)["']\s*\)/g,
+  )) {
     const rawBindings = match[1];
     const source = match[2];
     if (!rawBindings || !source?.startsWith(".")) {
@@ -276,7 +294,9 @@ function parseImports(file: ExpressFile, knownFiles: Set<string>): Map<string, I
     }
   }
 
-  for (const match of file.content.matchAll(/const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*require\(\s*["'](.+?)["']\s*\)/g)) {
+  for (const match of file.content.matchAll(
+    /const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*require\(\s*["'](.+?)["']\s*\)/g,
+  )) {
     const localName = match[1];
     const source = match[2];
     if (!localName || !source?.startsWith(".")) {
@@ -294,13 +314,17 @@ function parseImports(file: ExpressFile, knownFiles: Set<string>): Map<string, I
   return bindings;
 }
 
-function parseImportPart(rawPart: string): { importedName: string; localName: string; } | null {
+function parseImportPart(
+  rawPart: string,
+): { importedName: string; localName: string } | null {
   const part = rawPart.trim();
   if (!part) {
     return null;
   }
 
-  const aliasMatch = part.match(/^([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)$/);
+  const aliasMatch = part.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)\s+as\s+([A-Za-z_][A-Za-z0-9_]*)$/,
+  );
   if (aliasMatch?.[1] && aliasMatch[2]) {
     return {
       importedName: aliasMatch[1],
@@ -308,7 +332,9 @@ function parseImportPart(rawPart: string): { importedName: string; localName: st
     };
   }
 
-  const cjsAliasMatch = part.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)$/);
+  const cjsAliasMatch = part.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)$/,
+  );
   if (cjsAliasMatch?.[1] && cjsAliasMatch[2]) {
     return {
       importedName: cjsAliasMatch[1],
@@ -325,25 +351,33 @@ function parseImportPart(rawPart: string): { importedName: string; localName: st
 function parseExports(file: ExpressFile): FileExports {
   const named = new Map<string, string>();
 
-  for (const match of file.content.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g)) {
+  for (const match of file.content.matchAll(
+    /export\s+(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/g,
+  )) {
     if (match[1]) {
       named.set(match[1], match[1]);
     }
   }
 
-  for (const match of file.content.matchAll(/export\s+const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/g)) {
+  for (const match of file.content.matchAll(
+    /export\s+const\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/g,
+  )) {
     if (match[1]) {
       named.set(match[1], match[1]);
     }
   }
 
-  for (const match of file.content.matchAll(/exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_.]*)/g)) {
+  for (const match of file.content.matchAll(
+    /exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_.]*)/g,
+  )) {
     if (match[1] && match[2]) {
       named.set(match[1], match[2]);
     }
   }
 
-  for (const match of file.content.matchAll(/exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(|\()/g)) {
+  for (const match of file.content.matchAll(
+    /exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?(?:function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(|\()/g,
+  )) {
     if (match[1]) {
       named.set(match[1], match[1]);
     }
@@ -352,17 +386,23 @@ function parseExports(file: ExpressFile): FileExports {
   let defaultExpression: string | undefined;
   let defaultObject: Record<string, string> | undefined;
 
-  const exportDefaultFunctionMatch = file.content.match(/export\s+default\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+  const exportDefaultFunctionMatch = file.content.match(
+    /export\s+default\s+function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/,
+  );
   if (exportDefaultFunctionMatch?.[1]) {
     defaultExpression = exportDefaultFunctionMatch[1];
   }
 
-  const exportDefaultMatch = file.content.match(/export\s+default\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;?/);
+  const exportDefaultMatch = file.content.match(
+    /export\s+default\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;?/,
+  );
   if (exportDefaultMatch?.[1] && exportDefaultMatch[1] !== "function") {
     defaultExpression = exportDefaultMatch[1];
   }
 
-  const moduleExportsMatch = file.content.match(/module\.exports\s*=\s*([A-Za-z_][A-Za-z0-9_.]*)\s*;?/);
+  const moduleExportsMatch = file.content.match(
+    /module\.exports\s*=\s*([A-Za-z_][A-Za-z0-9_.]*)\s*;?/,
+  );
   if (moduleExportsMatch?.[1]) {
     defaultExpression = moduleExportsMatch[1];
   }
@@ -377,7 +417,10 @@ function parseExports(file: ExpressFile): FileExports {
     }
   }
 
-  const exportObjectMatch = matchAssignmentObject(file.content, "module.exports");
+  const exportObjectMatch = matchAssignmentObject(
+    file.content,
+    "module.exports",
+  );
   if (exportObjectMatch) {
     const parsedObject = parseObjectExportMap(exportObjectMatch);
     defaultObject = parsedObject;
@@ -401,7 +444,9 @@ function parseExports(file: ExpressFile): FileExports {
 function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
   const records: ExpressFunctionRecord[] = [];
 
-  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[\s\S]*?>\s*)?\(([^)]*)\)\s*\{/g)) {
+  for (const match of file.content.matchAll(
+    /(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[\s\S]*?>\s*)?\(([^)]*)\)\s*\{/g,
+  )) {
     const name = match[1];
     const params = match[2];
     const fullMatch = match[0];
@@ -423,7 +468,9 @@ function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
     });
   }
 
-  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/g)) {
+  for (const match of file.content.matchAll(
+    /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/g,
+  )) {
     const name = match[1];
     const params = match[2];
     const fullMatch = match[0];
@@ -445,7 +492,9 @@ function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
     });
   }
 
-  for (const match of file.content.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\{)([^;]+);/g)) {
+  for (const match of file.content.matchAll(
+    /(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\{)([^;]+);/g,
+  )) {
     const name = match[1];
     const params = match[2];
     const expression = match[3];
@@ -461,7 +510,9 @@ function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
     });
   }
 
-  for (const match of file.content.matchAll(/exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(([^)]*)\)\s*\{/g)) {
+  for (const match of file.content.matchAll(
+    /exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(([^)]*)\)\s*\{/g,
+  )) {
     const name = match[1];
     const params = match[2];
     const fullMatch = match[0];
@@ -483,7 +534,9 @@ function parseFunctions(file: ExpressFile): ExpressFunctionRecord[] {
     });
   }
 
-  for (const match of file.content.matchAll(/exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/g)) {
+  for (const match of file.content.matchAll(
+    /exports\.([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/g,
+  )) {
     const name = match[1];
     const params = match[2];
     const fullMatch = match[0];
@@ -512,13 +565,17 @@ function parseRouters(file: ExpressFile, index: ProjectIndex): RouterRecord[] {
   const routerKinds = new Map<string, "app" | "router">();
   const routers: RouterRecord[] = [];
 
-  for (const match of file.content.matchAll(/(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*express\s*\(\s*\)/g)) {
+  for (const match of file.content.matchAll(
+    /(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*express\s*\(\s*\)/g,
+  )) {
     if (match[1]) {
       routerKinds.set(match[1], "app");
     }
   }
 
-  for (const match of file.content.matchAll(/(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:express\s*\.\s*Router|Router)\s*\(\s*\)/g)) {
+  for (const match of file.content.matchAll(
+    /(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:express\s*\.\s*Router|Router)\s*\(\s*\)/g,
+  )) {
     if (match[1]) {
       routerKinds.set(match[1], "router");
     }
@@ -541,7 +598,12 @@ function parseRouters(file: ExpressFile, index: ProjectIndex): RouterRecord[] {
   for (const router of routers) {
     const calls = parseUseCalls(file, router.name);
     for (const call of calls) {
-      const parsed = parseUseCallArguments(call.args, file.filePath, index, localRouterNames);
+      const parsed = parseUseCallArguments(
+        call.args,
+        file.filePath,
+        index,
+        localRouterNames,
+      );
       if (parsed.routerKeys.length > 0) {
         for (const routerKey of parsed.routerKeys) {
           router.mounts.push({
@@ -561,7 +623,10 @@ function parseRouters(file: ExpressFile, index: ProjectIndex): RouterRecord[] {
   return [...routerMap.values()];
 }
 
-function parseRoutesForReceiver(file: ExpressFile, receiver: string): RouteRecord[] {
+function parseRoutesForReceiver(
+  file: ExpressFile,
+  receiver: string,
+): RouteRecord[] {
   const routes: RouteRecord[] = [];
 
   for (const method of httpMethods) {
@@ -578,7 +643,10 @@ function parseRoutesForReceiver(file: ExpressFile, receiver: string): RouteRecor
         line: call.line,
         method,
         path: rawPath,
-        middleware: args.slice(1, -1).map((value) => value.trim()).filter(Boolean),
+        middleware: args
+          .slice(1, -1)
+          .map((value) => value.trim())
+          .filter(Boolean),
         handler,
       });
     }
@@ -602,7 +670,10 @@ function parseRoutesForReceiver(file: ExpressFile, receiver: string): RouteRecor
         line: routeCall.line,
         method: chainedCall.method,
         path: routePath,
-        middleware: args.slice(0, -1).map((value) => value.trim()).filter(Boolean),
+        middleware: args
+          .slice(0, -1)
+          .map((value) => value.trim())
+          .filter(Boolean),
         handler,
       });
     }
@@ -611,7 +682,10 @@ function parseRoutesForReceiver(file: ExpressFile, receiver: string): RouteRecor
   return routes;
 }
 
-function parseUseCalls(file: ExpressFile, receiver: string): Array<{ args: string; line: number; }> {
+function parseUseCalls(
+  file: ExpressFile,
+  receiver: string,
+): Array<{ args: string; line: number }> {
   return findMethodCalls(file.content, receiver, "use");
 }
 
@@ -619,14 +693,20 @@ function findMethodCalls(
   content: string,
   receiver: string,
   method: string,
-): Array<{ args: string; line: number; endIndex: number; }> {
-  const results: Array<{ args: string; line: number; endIndex: number; }> = [];
-  const regex = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\.\\s*${method}\\s*(?:<[\\s\\S]*?>\\s*)?\\(`, "g");
+): Array<{ args: string; line: number; endIndex: number }> {
+  const results: Array<{ args: string; line: number; endIndex: number }> = [];
+  const regex = new RegExp(
+    `\\b${escapeRegExp(receiver)}\\s*\\.\\s*${method}\\s*(?:<[\\s\\S]*?>\\s*)?\\(`,
+    "g",
+  );
 
   for (const match of content.matchAll(regex)) {
     const startIndex = match.index ?? 0;
     const openParenIndex = content.indexOf("(", startIndex);
-    const argsBlock = openParenIndex >= 0 ? extractBalanced(content, openParenIndex, "(", ")") : null;
+    const argsBlock =
+      openParenIndex >= 0
+        ? extractBalanced(content, openParenIndex, "(", ")")
+        : null;
     if (!argsBlock) {
       continue;
     }
@@ -644,24 +724,40 @@ function findMethodCalls(
 function findRouteChainCalls(
   content: string,
   receiver: string,
-): Array<{ pathArgs: string[]; chainedCalls: Array<{ method: HttpMethod; args: string; }>; line: number; }> {
-  const results: Array<{ pathArgs: string[]; chainedCalls: Array<{ method: HttpMethod; args: string; }>; line: number; }> = [];
-  const regex = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\.\\s*route\\s*\\(`, "g");
+): Array<{
+  pathArgs: string[];
+  chainedCalls: Array<{ method: HttpMethod; args: string }>;
+  line: number;
+}> {
+  const results: Array<{
+    pathArgs: string[];
+    chainedCalls: Array<{ method: HttpMethod; args: string }>;
+    line: number;
+  }> = [];
+  const regex = new RegExp(
+    `\\b${escapeRegExp(receiver)}\\s*\\.\\s*route\\s*\\(`,
+    "g",
+  );
 
   for (const match of content.matchAll(regex)) {
     const startIndex = match.index ?? 0;
     const openParenIndex = content.indexOf("(", startIndex);
-    const argsBlock = openParenIndex >= 0 ? extractBalanced(content, openParenIndex, "(", ")") : null;
+    const argsBlock =
+      openParenIndex >= 0
+        ? extractBalanced(content, openParenIndex, "(", ")")
+        : null;
     if (!argsBlock) {
       continue;
     }
 
-    const chainedCalls: Array<{ method: HttpMethod; args: string; }> = [];
+    const chainedCalls: Array<{ method: HttpMethod; args: string }> = [];
     let cursor = openParenIndex + argsBlock.length;
 
     while (cursor < content.length) {
       const remainder = content.slice(cursor);
-      const chainedMatch = remainder.match(/^\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[\s\S]*?>\s*)?\(/i);
+      const chainedMatch = remainder.match(
+        /^\s*\.\s*(get|post|put|patch|delete|head|options)\s*(?:<[\s\S]*?>\s*)?\(/i,
+      );
       if (!chainedMatch?.[1]) {
         break;
       }
@@ -693,12 +789,19 @@ function findRouteChainCalls(
   return results;
 }
 
-function parseUseCallArguments(argsBlock: string, filePath: string, index: ProjectIndex, localRouterNames: Set<string>): {
+function parseUseCallArguments(
+  argsBlock: string,
+  filePath: string,
+  index: ProjectIndex,
+  localRouterNames: Set<string>,
+): {
   path: string;
   middleware: string[];
   routerKeys: string[];
 } {
-  const args = splitTopLevel(argsBlock, ",").map((value) => value.trim()).filter(Boolean);
+  const args = splitTopLevel(argsBlock, ",")
+    .map((value) => value.trim())
+    .filter(Boolean);
   let pathPrefix = "";
   let offset = 0;
 
@@ -712,7 +815,12 @@ function parseUseCallArguments(argsBlock: string, filePath: string, index: Proje
   const routerKeys: string[] = [];
 
   for (const expression of args.slice(offset)) {
-    const routerKey = resolveRouterExpression(filePath, expression, index, localRouterNames);
+    const routerKey = resolveRouterExpression(
+      filePath,
+      expression,
+      index,
+      localRouterNames,
+    );
     if (routerKey) {
       routerKeys.push(routerKey);
     } else {
@@ -756,13 +864,27 @@ function collectRouterEndpoints(input: {
   }
   visited.add(visitKey);
 
-  const currentMiddleware = dedupeValues([...inheritedMiddleware, ...router.middleware]);
+  const currentMiddleware = dedupeValues([
+    ...inheritedMiddleware,
+    ...router.middleware,
+  ]);
 
   for (const route of router.routes) {
     const fullPath = normalizeExpressPath(joinRoutePath(prefix, route.path));
-    const handlerAnalysis = analyzeExpressHandler(route.handler, route.filePath, index);
-    const routeMiddleware = dedupeValues([...currentMiddleware, ...route.middleware]);
-    const authInference = inferBearerAuthFromMiddleware("Express", routeMiddleware, config.auth.middlewarePatterns.bearer);
+    const handlerAnalysis = analyzeExpressHandler(
+      route.handler,
+      route.filePath,
+      index,
+    );
+    const routeMiddleware = dedupeValues([
+      ...currentMiddleware,
+      ...route.middleware,
+    ]);
+    const authInference = inferBearerAuthFromMiddleware(
+      "Express",
+      routeMiddleware,
+      config.auth.middlewarePatterns.bearer,
+    );
     const routeWarnings = handlerAnalysis.warnings.map((warning) => ({
       ...warning,
       location: warning.location ?? { file: route.filePath, line: route.line },
@@ -778,7 +900,7 @@ function collectRouterEndpoints(input: {
     }
     seenEndpoints.add(endpointId);
 
-      endpoints.push({
+    endpoints.push({
       id: endpointId,
       method: route.method,
       path: fullPath,
@@ -791,24 +913,19 @@ function collectRouterEndpoints(input: {
         ...handlerAnalysis.headerParameters,
       ]),
       requestBody: handlerAnalysis.requestBody,
-      responses: handlerAnalysis.responses.length > 0
-        ? handlerAnalysis.responses
-        : buildDefaultResponses(route.method),
+      responses:
+        handlerAnalysis.responses.length > 0
+          ? handlerAnalysis.responses
+          : buildDefaultResponses(route.method),
       auth: authInference.auth,
       source: {
         file: route.filePath,
         line: route.line,
       },
-      warnings: [
-        ...routeWarnings,
-        ...authWarnings,
-      ],
+      warnings: [...routeWarnings, ...authWarnings],
     });
 
-    warnings.push(
-      ...routeWarnings,
-      ...authWarnings,
-    );
+    warnings.push(...routeWarnings, ...authWarnings);
   }
 
   for (const mount of router.mounts) {
@@ -822,7 +939,10 @@ function collectRouterEndpoints(input: {
       index,
       config,
       prefix: joinRoutePath(prefix, mount.path),
-      inheritedMiddleware: dedupeValues([...currentMiddleware, ...mount.middleware]),
+      inheritedMiddleware: dedupeValues([
+        ...currentMiddleware,
+        ...mount.middleware,
+      ]),
       visited: new Set(visited),
       endpoints,
       warnings,
@@ -831,7 +951,11 @@ function collectRouterEndpoints(input: {
   }
 }
 
-function analyzeExpressHandler(handlerExpression: string, filePath: string, index: ProjectIndex): HandlerAnalysis {
+function analyzeExpressHandler(
+  handlerExpression: string,
+  filePath: string,
+  index: ProjectIndex,
+): HandlerAnalysis {
   const inlineHandler = parseInlineHandler(handlerExpression);
   const handlerRecord = inlineHandler
     ? { ...inlineHandler, filePath }
@@ -842,10 +966,12 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
       queryParameters: [],
       headerParameters: [],
       responses: [],
-      warnings: [{
-        code: "EXPRESS_HANDLER_NOT_FOUND",
-        message: `Express: skipped handler '${handlerExpression}' because the reference could not be resolved for request/response inference.`,
-      }],
+      warnings: [
+        {
+          code: "EXPRESS_HANDLER_NOT_FOUND",
+          message: `Express: skipped handler '${handlerExpression}' because the reference could not be resolved for request/response inference.`,
+        },
+      ],
     };
   }
 
@@ -853,23 +979,40 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
   const resName = handlerRecord.params[1] ?? "res";
   const exampleContext = createJsExampleContext(handlerRecord.body, reqName);
   const bodyFields = mergeExpressRequestFields(
-    extractObjectFieldsFromRequest(handlerRecord.body, reqName, "body", exampleContext),
+    extractObjectFieldsFromRequest(
+      handlerRecord.body,
+      reqName,
+      "body",
+      exampleContext,
+    ),
     inferJoiFieldsForHandler(handlerRecord, reqName, "body", index),
   );
   const queryFields = mergeExpressRequestFields(
-    extractObjectFieldsFromRequest(handlerRecord.body, reqName, "query", exampleContext),
+    extractObjectFieldsFromRequest(
+      handlerRecord.body,
+      reqName,
+      "query",
+      exampleContext,
+    ),
     inferJoiFieldsForHandler(handlerRecord, reqName, "query", index),
   );
 
   return {
-    requestBody: bodyFields.length > 0 ? {
-      contentType: "application/json",
-      schema: {
-        type: "object",
-        properties: Object.fromEntries(bodyFields.map((field) => [field.name, field.schema])),
-        required: bodyFields.filter((field) => field.required).map((field) => field.name),
-      },
-    } : undefined,
+    requestBody:
+      bodyFields.length > 0
+        ? {
+            contentType: "application/json",
+            schema: {
+              type: "object",
+              properties: Object.fromEntries(
+                bodyFields.map((field) => [field.name, field.schema]),
+              ),
+              required: bodyFields
+                .filter((field) => field.required)
+                .map((field) => field.name),
+            },
+          }
+        : undefined,
     queryParameters: queryFields.map((field) => ({
       name: field.name,
       in: "query",
@@ -877,16 +1020,28 @@ function analyzeExpressHandler(handlerExpression: string, filePath: string, inde
       schema: field.schema,
     })),
     headerParameters: extractExpressHeaders(handlerRecord.body, reqName),
-    responses: extractExpressResponses(handlerRecord, resName, exampleContext, index),
+    responses: extractExpressResponses(
+      handlerRecord,
+      resName,
+      exampleContext,
+      index,
+    ),
     warnings: [],
   };
 }
 
 function mergeExpressRequestFields(
-  directFields: Array<{ name: string; required: boolean; schema: SchemaObject; }>,
+  directFields: Array<{
+    name: string;
+    required: boolean;
+    schema: SchemaObject;
+  }>,
   joiFields: JoiFieldAnalysis[],
-): Array<{ name: string; required: boolean; schema: SchemaObject; }> {
-  const fields = new Map<string, { name: string; required: boolean; schema: SchemaObject; }>();
+): Array<{ name: string; required: boolean; schema: SchemaObject }> {
+  const fields = new Map<
+    string,
+    { name: string; required: boolean; schema: SchemaObject }
+  >();
 
   for (const field of directFields) {
     fields.set(field.name, field);
@@ -904,7 +1059,10 @@ function mergeExpressRequestFields(
   return [...fields.values()];
 }
 
-function mergeSchemaObjects(base: SchemaObject | undefined, override: SchemaObject): SchemaObject {
+function mergeSchemaObjects(
+  base: SchemaObject | undefined,
+  override: SchemaObject,
+): SchemaObject {
   if (!base) {
     return override;
   }
@@ -931,7 +1089,10 @@ function inferJoiFieldsForHandler(
   }
 
   const schemaNames = new Set<string>();
-  const validateRegex = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`, "g");
+  const validateRegex = new RegExp(
+    `([A-Za-z_][A-Za-z0-9_]*)\\s*\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`,
+    "g",
+  );
   for (const match of handlerRecord.body.matchAll(validateRegex)) {
     if (match[1]) {
       schemaNames.add(match[1]);
@@ -950,7 +1111,11 @@ function inferJoiFieldsForHandler(
     }
   }
 
-  for (const field of extractInlineJoiSchemaFields(handlerRecord.body, reqName, target)) {
+  for (const field of extractInlineJoiSchemaFields(
+    handlerRecord.body,
+    reqName,
+    target,
+  )) {
     const existing = fields.get(field.name);
     fields.set(field.name, {
       name: field.name,
@@ -962,8 +1127,14 @@ function inferJoiFieldsForHandler(
   return [...fields.values()];
 }
 
-function extractJoiSchemaFields(content: string, schemaName: string): JoiFieldAnalysis[] {
-  const definitionRegex = new RegExp(`(?:export\\s+)?(?:const|let|var)\\s+${escapeRegExp(schemaName)}\\s*=`, "g");
+function extractJoiSchemaFields(
+  content: string,
+  schemaName: string,
+): JoiFieldAnalysis[] {
+  const definitionRegex = new RegExp(
+    `(?:export\\s+)?(?:const|let|var)\\s+${escapeRegExp(schemaName)}\\s*=`,
+    "g",
+  );
 
   for (const match of content.matchAll(definitionRegex)) {
     const startIndex = match.index ?? -1;
@@ -972,7 +1143,10 @@ function extractJoiSchemaFields(content: string, schemaName: string): JoiFieldAn
     }
 
     const equalsIndex = content.indexOf("=", startIndex);
-    const endIndex = equalsIndex >= 0 ? findTopLevelStatementTerminator(content, equalsIndex + 1) : -1;
+    const endIndex =
+      equalsIndex >= 0
+        ? findTopLevelStatementTerminator(content, equalsIndex + 1)
+        : -1;
     if (equalsIndex < 0 || endIndex < 0) {
       continue;
     }
@@ -994,8 +1168,11 @@ function extractInlineJoiSchemaFields(
   target: "body" | "query",
 ): JoiFieldAnalysis[] {
   const statements = new Set<string>();
-  const inlineRegex = /[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/g;
-  const validateRegex = new RegExp(`\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`);
+  const inlineRegex =
+    /[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/g;
+  const validateRegex = new RegExp(
+    `\\.\\s*validate(?:Async)?\\(\\s*${escapeRegExp(reqName)}\\.${target}\\b`,
+  );
 
   for (const match of body.matchAll(inlineRegex)) {
     const startIndex = match.index ?? -1;
@@ -1031,7 +1208,9 @@ function extractInlineJoiSchemaFields(
   return [...fields.values()];
 }
 
-function extractJoiFieldsFromSchemaExpression(expression: string): JoiFieldAnalysis[] {
+function extractJoiFieldsFromSchemaExpression(
+  expression: string,
+): JoiFieldAnalysis[] {
   const objectBlock = extractJoiObjectBlock(expression);
   if (!objectBlock) {
     return [];
@@ -1060,14 +1239,19 @@ function extractJoiFieldsFromSchemaExpression(expression: string): JoiFieldAnaly
 }
 
 function extractJoiObjectBlock(expression: string): string | null {
-  const objectMatch = expression.match(/[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/);
+  const objectMatch = expression.match(
+    /[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*object\s*(?:<[\s\S]*?>\s*)?\(/,
+  );
   if (!objectMatch) {
     return null;
   }
 
   const objectCallIndex = expression.indexOf(objectMatch[0]);
   const objectOpenParenIndex = expression.indexOf("(", objectCallIndex);
-  const objectArgs = objectOpenParenIndex >= 0 ? extractBalanced(expression, objectOpenParenIndex, "(", ")") : null;
+  const objectArgs =
+    objectOpenParenIndex >= 0
+      ? extractBalanced(expression, objectOpenParenIndex, "(", ")")
+      : null;
 
   if (objectArgs) {
     const directObject = splitTopLevel(objectArgs.slice(1, -1), ",")[0]?.trim();
@@ -1084,8 +1268,14 @@ function extractJoiObjectBlock(expression: string): string | null {
     return null;
   }
 
-  const keysOpenParenIndex = expression.indexOf("(", expression.indexOf(keysMatch[0]));
-  const keysArgs = keysOpenParenIndex >= 0 ? extractBalanced(expression, keysOpenParenIndex, "(", ")") : null;
+  const keysOpenParenIndex = expression.indexOf(
+    "(",
+    expression.indexOf(keysMatch[0]),
+  );
+  const keysArgs =
+    keysOpenParenIndex >= 0
+      ? extractBalanced(expression, keysOpenParenIndex, "(", ")")
+      : null;
   if (!keysArgs) {
     return null;
   }
@@ -1098,7 +1288,9 @@ function extractJoiObjectBlock(expression: string): string | null {
   return extractBalanced(keysObject, 0, "{", "}");
 }
 
-function parseJoiFieldExpression(expression: string): { required: boolean; schema: SchemaObject; } | null {
+function parseJoiFieldExpression(
+  expression: string,
+): { required: boolean; schema: SchemaObject } | null {
   const trimmed = expression.trim();
   if (!trimmed) {
     return null;
@@ -1107,7 +1299,9 @@ function parseJoiFieldExpression(expression: string): { required: boolean; schem
   const schema: SchemaObject = {};
   let required = false;
   let baseType: SchemaObject["type"] = "string";
-  const typeMatch = trimmed.match(/^[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*(array|boolean|number|object|string)\s*\(/);
+  const typeMatch = trimmed.match(
+    /^[A-Za-z_][A-Za-z0-9_.]*\s*\.\s*(array|boolean|number|object|string)\s*\(/,
+  );
   if (typeMatch?.[1]) {
     baseType = typeMatch[1] as SchemaObject["type"];
   }
@@ -1121,8 +1315,12 @@ function parseJoiFieldExpression(expression: string): { required: boolean; schem
   if (schema.type === "object") {
     const nestedFields = extractJoiFieldsFromSchemaExpression(trimmed);
     if (nestedFields.length > 0) {
-      schema.properties = Object.fromEntries(nestedFields.map((field) => [field.name, field.schema]));
-      const requiredFields = nestedFields.filter((field) => field.required).map((field) => field.name);
+      schema.properties = Object.fromEntries(
+        nestedFields.map((field) => [field.name, field.schema]),
+      );
+      const requiredFields = nestedFields
+        .filter((field) => field.required)
+        .map((field) => field.name);
       schema.required = requiredFields.length > 0 ? requiredFields : undefined;
     }
   }
@@ -1161,12 +1359,16 @@ function parseJoiFieldExpression(expression: string): { required: boolean; schem
   if (validMatch?.[1]) {
     schema.enum = splitTopLevel(validMatch[1], ",")
       .map((value) => buildExampleFromJsExpression(value))
-      .filter((value) => value !== undefined) as Array<string | number | boolean>;
+      .filter((value) => value !== undefined) as Array<
+      string | number | boolean
+    >;
   }
 
   const itemsMatch = trimmed.match(/\.items\(\s*([\s\S]+?)\s*\)(?:\.|$)/);
   if (schema.type === "array" && itemsMatch?.[1]) {
-    schema.items = parseJoiFieldExpression(itemsMatch[1])?.schema ?? { type: "string" };
+    schema.items = parseJoiFieldExpression(itemsMatch[1])?.schema ?? {
+      type: "string",
+    };
   }
 
   if (/\.required\s*\(/.test(trimmed)) {
@@ -1185,10 +1387,13 @@ function parseJoiFieldExpression(expression: string): { required: boolean; schem
 
 function parseInlineHandler(expression: string): ExpressFunctionRecord | null {
   const trimmed = expression.trim();
-  const functionMatch = trimmed.match(/^(?:async\s+)?function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(([^)]*)\)\s*\{/);
+  const functionMatch = trimmed.match(
+    /^(?:async\s+)?function(?:\s+[A-Za-z_][A-Za-z0-9_]*)?\s*\(([^)]*)\)\s*\{/,
+  );
   if (functionMatch?.[1] !== undefined) {
     const braceStart = trimmed.indexOf("{");
-    const block = braceStart >= 0 ? extractBalanced(trimmed, braceStart, "{", "}") : null;
+    const block =
+      braceStart >= 0 ? extractBalanced(trimmed, braceStart, "{", "}") : null;
     if (!block) {
       return null;
     }
@@ -1204,7 +1409,8 @@ function parseInlineHandler(expression: string): ExpressFunctionRecord | null {
   const arrowMatch = trimmed.match(/^(?:async\s*)?\(([^)]*)\)\s*=>\s*\{/);
   if (arrowMatch?.[1] !== undefined) {
     const braceStart = trimmed.indexOf("{");
-    const block = braceStart >= 0 ? extractBalanced(trimmed, braceStart, "{", "}") : null;
+    const block =
+      braceStart >= 0 ? extractBalanced(trimmed, braceStart, "{", "}") : null;
     if (!block) {
       return null;
     }
@@ -1232,9 +1438,16 @@ function resolveHandlerReference(
     return direct;
   }
 
-  const memberMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/);
+  const memberMatch = trimmed.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/,
+  );
   if (memberMatch?.[1] && memberMatch[2]) {
-    const importedRecord = resolveImportedMember(filePath, memberMatch[1], memberMatch[2], index);
+    const importedRecord = resolveImportedMember(
+      filePath,
+      memberMatch[1],
+      memberMatch[2],
+      index,
+    );
     if (importedRecord) {
       return importedRecord;
     }
@@ -1268,16 +1481,22 @@ function resolveImportedIdentifier(
   }
 
   if (binding.kind === "named") {
-    const expression = index.exports.get(binding.sourceFile)?.named.get(binding.importedName ?? identifier);
+    const expression = index.exports
+      .get(binding.sourceFile)
+      ?.named.get(binding.importedName ?? identifier);
     return expression
-      ? index.functions.get(createFunctionKey(binding.sourceFile, expression)) ?? null
+      ? (index.functions.get(
+          createFunctionKey(binding.sourceFile, expression),
+        ) ?? null)
       : null;
   }
 
   if (binding.kind === "default") {
     const expression = index.exports.get(binding.sourceFile)?.defaultExpression;
     return expression
-      ? index.functions.get(createFunctionKey(binding.sourceFile, expression)) ?? null
+      ? (index.functions.get(
+          createFunctionKey(binding.sourceFile, expression),
+        ) ?? null)
       : null;
   }
 
@@ -1300,12 +1519,17 @@ function resolveImportedMember(
     return null;
   }
 
-  const expression = targetExports.defaultObject?.[property] ?? targetExports.named.get(property);
+  const expression =
+    targetExports.defaultObject?.[property] ??
+    targetExports.named.get(property);
   if (!expression) {
     return null;
   }
 
-  return index.functions.get(createFunctionKey(binding.sourceFile, expression)) ?? null;
+  return (
+    index.functions.get(createFunctionKey(binding.sourceFile, expression)) ??
+    null
+  );
 }
 
 function resolveRouterExpression(
@@ -1315,21 +1539,42 @@ function resolveRouterExpression(
   localRouterNames: Set<string>,
 ): string | null {
   const trimmed = expression.trim();
-  const memberMatch = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/);
+  const memberMatch = trimmed.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/,
+  );
 
   if (memberMatch?.[1] && memberMatch[2]) {
     const binding = index.imports.get(filePath)?.get(memberMatch[1]);
-    const targetExports = binding ? index.exports.get(binding.sourceFile) : undefined;
-    const exportedExpression = targetExports?.defaultObject?.[memberMatch[2]] ?? targetExports?.named.get(memberMatch[2]);
-    if (binding?.sourceFile && exportedExpression && fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
+    const targetExports = binding
+      ? index.exports.get(binding.sourceFile)
+      : undefined;
+    const exportedExpression =
+      targetExports?.defaultObject?.[memberMatch[2]] ??
+      targetExports?.named.get(memberMatch[2]);
+    if (
+      binding?.sourceFile &&
+      exportedExpression &&
+      fileDeclaresRouter(
+        index.files.get(binding.sourceFile),
+        exportedExpression,
+      )
+    ) {
       return createRouterKey(binding.sourceFile, exportedExpression);
     }
   }
 
   const binding = index.imports.get(filePath)?.get(trimmed);
   if (binding?.kind === "default") {
-    const exportedExpression = index.exports.get(binding.sourceFile)?.defaultExpression;
-    if (!exportedExpression || !fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
+    const exportedExpression = index.exports.get(
+      binding.sourceFile,
+    )?.defaultExpression;
+    if (
+      !exportedExpression ||
+      !fileDeclaresRouter(
+        index.files.get(binding.sourceFile),
+        exportedExpression,
+      )
+    ) {
       return null;
     }
 
@@ -1337,8 +1582,17 @@ function resolveRouterExpression(
   }
 
   if (binding?.kind === "named") {
-    const exportedExpression = index.exports.get(binding.sourceFile)?.named.get(binding.importedName ?? trimmed) ?? binding.importedName;
-    if (!exportedExpression || !fileDeclaresRouter(index.files.get(binding.sourceFile), exportedExpression)) {
+    const exportedExpression =
+      index.exports
+        .get(binding.sourceFile)
+        ?.named.get(binding.importedName ?? trimmed) ?? binding.importedName;
+    if (
+      !exportedExpression ||
+      !fileDeclaresRouter(
+        index.files.get(binding.sourceFile),
+        exportedExpression,
+      )
+    ) {
       return null;
     }
 
@@ -1357,28 +1611,53 @@ function extractObjectFieldsFromRequest(
   reqName: string,
   target: "body" | "query",
   exampleContext: JsExampleContext,
-): Array<{ name: string; required: boolean; schema: SchemaObject; }> {
-  const fields = new Map<string, { required: boolean; schema: SchemaObject; }>();
+): Array<{ name: string; required: boolean; schema: SchemaObject }> {
+  const fields = new Map<string, { required: boolean; schema: SchemaObject }>();
 
-  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.${target}(?:\\?\\.|\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.${target}(?:\\?\\.|\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)`,
+      "g",
+    ),
+  )) {
     if (match[1]) {
       fields.set(match[1], {
         required: false,
-        schema: inferExpressRequestFieldSchema(match[1], reqName, target, exampleContext),
+        schema: inferExpressRequestFieldSchema(
+          match[1],
+          reqName,
+          target,
+          exampleContext,
+        ),
       });
     }
   }
 
-  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`,
+      "g",
+    ),
+  )) {
     if (match[1]) {
       fields.set(match[1], {
         required: false,
-        schema: inferExpressRequestFieldSchema(match[1], reqName, target, exampleContext),
+        schema: inferExpressRequestFieldSchema(
+          match[1],
+          reqName,
+          target,
+          exampleContext,
+        ),
       });
     }
   }
 
-  for (const match of body.matchAll(new RegExp(`(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.${target}\\b`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.${target}\\b`,
+      "g",
+    ),
+  )) {
     const destructured = match[1];
     if (!destructured) {
       continue;
@@ -1392,7 +1671,13 @@ function extractObjectFieldsFromRequest(
 
       fields.set(field.sourceName, {
         required: field.required && target === "body",
-        schema: inferExpressRequestFieldSchema(field.sourceName, reqName, target, exampleContext, field.defaultExpression),
+        schema: inferExpressRequestFieldSchema(
+          field.sourceName,
+          reqName,
+          target,
+          exampleContext,
+          field.defaultExpression,
+        ),
       });
     }
   }
@@ -1404,7 +1689,14 @@ function extractObjectFieldsFromRequest(
   }));
 }
 
-function parseDestructuredField(part: string): { sourceName: string; localName: string; required: boolean; defaultExpression?: string; } | null {
+function parseDestructuredField(
+  part: string,
+): {
+  sourceName: string;
+  localName: string;
+  required: boolean;
+  defaultExpression?: string;
+} | null {
   const cleaned = part.trim();
   if (!cleaned || cleaned.startsWith("...")) {
     return null;
@@ -1416,10 +1708,17 @@ function parseDestructuredField(part: string): { sourceName: string; localName: 
     return null;
   }
 
-  const pieces = withoutDefault.split(":").map((value: string) => value.trim()).filter(Boolean);
+  const pieces = withoutDefault
+    .split(":")
+    .map((value: string) => value.trim())
+    .filter(Boolean);
   const sourceName = pieces[0];
   const localName = pieces[1] ?? sourceName;
-  if (!sourceName || !localName || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(sourceName)) {
+  if (
+    !sourceName ||
+    !localName ||
+    !/^[A-Za-z_][A-Za-z0-9_]*$/.test(sourceName)
+  ) {
     return null;
   }
 
@@ -1431,28 +1730,57 @@ function parseDestructuredField(part: string): { sourceName: string; localName: 
   };
 }
 
-function extractExpressHeaders(body: string, reqName: string): NormalizedParameter[] {
+function extractExpressHeaders(
+  body: string,
+  reqName: string,
+): NormalizedParameter[] {
   const headers = new Map<string, string>();
 
-  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.(?:get|header)\\(\\s*["'\`]([^"'\\\`]+)["'\`]`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.(?:get|header)\\(\\s*["'\`]([^"'\\\`]+)["'\`]`,
+      "g",
+    ),
+  )) {
     if (match[1]) {
       headers.set(match[1].toLowerCase(), match[1]);
     }
   }
 
-  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.headers\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.headers\\[\\s*["'\`]([^"'\\\`]+)["'\`]\\s*\\]`,
+      "g",
+    ),
+  )) {
     if (match[1]) {
-      headers.set(match[1].toLowerCase(), headers.get(match[1].toLowerCase()) ?? match[1]);
+      headers.set(
+        match[1].toLowerCase(),
+        headers.get(match[1].toLowerCase()) ?? match[1],
+      );
     }
   }
 
-  for (const match of body.matchAll(new RegExp(`${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)`,
+      "g",
+    ),
+  )) {
     if (match[1]) {
-      headers.set(match[1].toLowerCase(), headers.get(match[1].toLowerCase()) ?? match[1]);
+      headers.set(
+        match[1].toLowerCase(),
+        headers.get(match[1].toLowerCase()) ?? match[1],
+      );
     }
   }
 
-  for (const match of body.matchAll(new RegExp(`(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.headers\\b`, "g"))) {
+  for (const match of body.matchAll(
+    new RegExp(
+      `(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.headers\\b`,
+      "g",
+    ),
+  )) {
     const destructured = match[1];
     if (!destructured) {
       continue;
@@ -1461,7 +1789,10 @@ function extractExpressHeaders(body: string, reqName: string): NormalizedParamet
     for (const part of splitTopLevel(destructured, ",")) {
       const field = parseDestructuredField(part);
       if (field) {
-        headers.set(field.sourceName.toLowerCase(), headers.get(field.sourceName.toLowerCase()) ?? field.sourceName);
+        headers.set(
+          field.sourceName.toLowerCase(),
+          headers.get(field.sourceName.toLowerCase()) ?? field.sourceName,
+        );
       }
     }
   }
@@ -1484,16 +1815,25 @@ function extractExpressResponses(
   const body = handlerRecord.body;
   const responses = new Map<string, NormalizedResponse>();
 
-  const statusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*status\\s*\\(`, "g");
+  const statusRegex = new RegExp(
+    `\\b${escapeRegExp(resName)}\\s*\\.\\s*status\\s*\\(`,
+    "g",
+  );
   for (const match of body.matchAll(statusRegex)) {
     const statusStart = match.index ?? 0;
     const statusOpenParen = body.indexOf("(", statusStart);
-    const statusArgs = statusOpenParen >= 0 ? extractBalanced(body, statusOpenParen, "(", ")") : null;
+    const statusArgs =
+      statusOpenParen >= 0
+        ? extractBalanced(body, statusOpenParen, "(", ")")
+        : null;
     if (!statusArgs) {
       continue;
     }
 
-    const statusCode = normalizeExpressStatusCodeExpression(statusArgs.slice(1, -1), exampleContext);
+    const statusCode = normalizeExpressStatusCodeExpression(
+      statusArgs.slice(1, -1),
+      exampleContext,
+    );
     if (!statusCode) {
       continue;
     }
@@ -1507,15 +1847,29 @@ function extractExpressResponses(
 
     const method = responseMatch[1];
     const responseOpenParen = body.indexOf("(", cursor);
-    const responseArgs = responseOpenParen >= 0 ? extractBalanced(body, responseOpenParen, "(", ")") : null;
+    const responseArgs =
+      responseOpenParen >= 0
+        ? extractBalanced(body, responseOpenParen, "(", ")")
+        : null;
     if (!responseArgs) {
       continue;
     }
 
-    responses.set(statusCode, buildExpressResponse(statusCode, responseArgs.slice(1, -1), method, exampleContext));
+    responses.set(
+      statusCode,
+      buildExpressResponse(
+        statusCode,
+        responseArgs.slice(1, -1),
+        method,
+        exampleContext,
+      ),
+    );
   }
 
-  const defaultRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*(json|send)\\s*\\(`, "g");
+  const defaultRegex = new RegExp(
+    `\\b${escapeRegExp(resName)}\\s*\\.\\s*(json|send)\\s*\\(`,
+    "g",
+  );
   for (const match of body.matchAll(defaultRegex)) {
     const method = match[1];
     const startIndex = match.index ?? 0;
@@ -1525,15 +1879,29 @@ function extractExpressResponses(
     }
 
     const openParenIndex = body.indexOf("(", startIndex + match[0].length - 1);
-    const argsBlock = openParenIndex >= 0 ? extractBalanced(body, openParenIndex, "(", ")") : null;
+    const argsBlock =
+      openParenIndex >= 0
+        ? extractBalanced(body, openParenIndex, "(", ")")
+        : null;
     if (!method || !argsBlock || responses.has("200")) {
       continue;
     }
 
-    responses.set("200", buildExpressResponse("200", argsBlock.slice(1, -1), method, exampleContext));
+    responses.set(
+      "200",
+      buildExpressResponse(
+        "200",
+        argsBlock.slice(1, -1),
+        method,
+        exampleContext,
+      ),
+    );
   }
 
-  const sendStatusRegex = new RegExp(`\\b${escapeRegExp(resName)}\\s*\\.\\s*sendStatus\\s*\\(\\s*(\\d{3})\\s*\\)`, "g");
+  const sendStatusRegex = new RegExp(
+    `\\b${escapeRegExp(resName)}\\s*\\.\\s*sendStatus\\s*\\(\\s*(\\d{3})\\s*\\)`,
+    "g",
+  );
   for (const match of body.matchAll(sendStatusRegex)) {
     const statusCode = match[1];
     if (statusCode && !responses.has(statusCode)) {
@@ -1545,7 +1913,13 @@ function extractExpressResponses(
   }
 
   if (depth < 2) {
-    for (const helperResponse of extractExpressHelperResponses(handlerRecord, resName, exampleContext, index, depth)) {
+    for (const helperResponse of extractExpressHelperResponses(
+      handlerRecord,
+      resName,
+      exampleContext,
+      index,
+      depth,
+    )) {
       if (!responses.has(helperResponse.statusCode)) {
         responses.set(helperResponse.statusCode, helperResponse);
       }
@@ -1562,16 +1936,20 @@ function buildExpressResponse(
   exampleContext: JsExampleContext,
 ): NormalizedResponse {
   const firstArg = splitTopLevel(rawArgs, ",")[0]?.trim();
-  const example = firstArg ? buildExampleFromJsExpression(firstArg, exampleContext) : undefined;
-  const schema = example !== undefined
-    ? inferSchemaFromJsExample(example)
-    : firstArg
-      ? inferSchemaFromJsExpression(firstArg)
-      : undefined;
+  const example = firstArg
+    ? buildExampleFromJsExpression(firstArg, exampleContext)
+    : undefined;
+  const schema =
+    example !== undefined
+      ? inferSchemaFromJsExample(example)
+      : firstArg
+        ? inferSchemaFromJsExpression(firstArg)
+        : undefined;
 
   return {
     statusCode,
-    description: method === "json" ? "Inferred JSON response" : "Inferred response",
+    description:
+      method === "json" ? "Inferred JSON response" : "Inferred response",
     contentType: method === "json" ? "application/json" : "text/plain",
     schema,
     example,
@@ -1593,13 +1971,23 @@ function extractExpressHelperResponses(
       continue;
     }
 
-    const conventionalResponse = inferExpressConventionalHelperResponse(helperCall, exampleContext);
+    const conventionalResponse = inferExpressConventionalHelperResponse(
+      helperCall,
+      exampleContext,
+    );
     if (conventionalResponse) {
       responses.push(conventionalResponse);
     }
 
-    const helperRecord = resolveHandlerReference(helperCall.expression, handlerRecord.filePath, index)
-      ?? index.functions.get(createFunctionKey(handlerRecord.filePath, helperCall.expression));
+    const helperRecord =
+      resolveHandlerReference(
+        helperCall.expression,
+        handlerRecord.filePath,
+        index,
+      ) ??
+      index.functions.get(
+        createFunctionKey(handlerRecord.filePath, helperCall.expression),
+      );
     if (!helperRecord) {
       continue;
     }
@@ -1608,39 +1996,64 @@ function extractExpressHelperResponses(
     helperRecord.params.forEach((paramName, index) => {
       const argExpression = helperCall.args[index];
       if (paramName && argExpression) {
-        seedAssignments.set(paramName, materializeJsArgumentExpression(argExpression, exampleContext));
+        seedAssignments.set(
+          paramName,
+          materializeJsArgumentExpression(argExpression, exampleContext),
+        );
       }
     });
 
-    const helperReqName = helperRecord.params.find((paramName, index) => helperCall.args[index]?.trim() === exampleContext.reqName)
-      ?? exampleContext.reqName;
-    const helperResName = helperRecord.params.find((paramName, index) => helperCall.args[index]?.trim() === resName)
-      ?? resName;
-    const helperContext = createJsExampleContext(helperRecord.body, helperReqName, seedAssignments);
-    responses.push(...extractExpressResponses(helperRecord, helperResName, helperContext, index, depth + 1));
+    const helperReqName =
+      helperRecord.params.find(
+        (paramName, index) =>
+          helperCall.args[index]?.trim() === exampleContext.reqName,
+      ) ?? exampleContext.reqName;
+    const helperResName =
+      helperRecord.params.find(
+        (paramName, index) => helperCall.args[index]?.trim() === resName,
+      ) ?? resName;
+    const helperContext = createJsExampleContext(
+      helperRecord.body,
+      helperReqName,
+      seedAssignments,
+    );
+    responses.push(
+      ...extractExpressResponses(
+        helperRecord,
+        helperResName,
+        helperContext,
+        index,
+        depth + 1,
+      ),
+    );
   }
 
   return dedupeResponsesByStatusCode(responses);
 }
 
 function inferExpressConventionalHelperResponse(
-  helperCall: { expression: string; args: string[]; },
+  helperCall: { expression: string; args: string[] },
   exampleContext: JsExampleContext,
 ): NormalizedResponse | undefined {
-  const helperName = helperCall.expression.split(".").pop()?.toLowerCase() ?? "";
+  const helperName =
+    helperCall.expression.split(".").pop()?.toLowerCase() ?? "";
   if (!helperName) {
     return undefined;
   }
 
   if (helperName.includes("validation")) {
-    const errors = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    const errors = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : {};
     return buildExpressResponseFromExample("422", {
       errors,
     });
   }
 
   if (helperName.includes("conflict")) {
-    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Conflict";
+    const error = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : "Conflict";
     return buildExpressResponseFromExample("409", {
       success: false,
       error,
@@ -1648,7 +2061,9 @@ function inferExpressConventionalHelperResponse(
   }
 
   if (helperName.includes("notfound")) {
-    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Not found";
+    const error = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : "Not found";
     return buildExpressResponseFromExample("404", {
       success: false,
       error,
@@ -1656,7 +2071,9 @@ function inferExpressConventionalHelperResponse(
   }
 
   if (helperName.includes("created")) {
-    const data = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    const data = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : {};
     return buildExpressResponseFromExample("201", {
       success: true,
       data,
@@ -1664,7 +2081,9 @@ function inferExpressConventionalHelperResponse(
   }
 
   if (helperName.includes("success")) {
-    const data = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : {};
+    const data = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : {};
     const statusCode = helperCall.args[2]
       ? normalizeExpressStatusCodeExpression(helperCall.args[2], exampleContext)
       : "200";
@@ -1675,7 +2094,9 @@ function inferExpressConventionalHelperResponse(
   }
 
   if (helperName.includes("error")) {
-    const error = helperCall.args[1] ? buildExampleFromJsExpression(helperCall.args[1], exampleContext) : "Error";
+    const error = helperCall.args[1]
+      ? buildExampleFromJsExpression(helperCall.args[1], exampleContext)
+      : "Error";
     const statusCode = helperCall.args[2]
       ? normalizeExpressStatusCodeExpression(helperCall.args[2], exampleContext)
       : "400";
@@ -1688,7 +2109,10 @@ function inferExpressConventionalHelperResponse(
   return undefined;
 }
 
-function buildExpressResponseFromExample(statusCode: string, example: unknown): NormalizedResponse {
+function buildExpressResponseFromExample(
+  statusCode: string,
+  example: unknown,
+): NormalizedResponse {
   return {
     statusCode,
     description: "Inferred helper response",
@@ -1700,14 +2124,19 @@ function buildExpressResponseFromExample(statusCode: string, example: unknown): 
 
 function parseExpressHelperReturnStatement(
   statement: string,
-): { expression: string; args: string[]; } | undefined {
-  const match = statement.match(/^return\s+(?:await\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*\(/);
+): { expression: string; args: string[] } | undefined {
+  const match = statement.match(
+    /^return\s+(?:await\s+)?([A-Za-z_][A-Za-z0-9_.]*)\s*\(/,
+  );
   if (!match?.[1]) {
     return undefined;
   }
 
   const openParenIndex = statement.indexOf("(", match[0].length - 1);
-  const argsBlock = openParenIndex >= 0 ? extractBalanced(statement, openParenIndex, "(", ")") : null;
+  const argsBlock =
+    openParenIndex >= 0
+      ? extractBalanced(statement, openParenIndex, "(", ")")
+      : null;
   if (!argsBlock) {
     return undefined;
   }
@@ -1738,9 +2167,11 @@ function extractReturnStatements(body: string): string[] {
   }
 
   return statements;
-  }
+}
 
-function inferSchemaFromJsExpression(expression: string): SchemaObject | undefined {
+function inferSchemaFromJsExpression(
+  expression: string,
+): SchemaObject | undefined {
   const trimmed = expression.trim();
   if (!trimmed) {
     return undefined;
@@ -1768,10 +2199,14 @@ function inferSchemaFromJsExpression(expression: string): SchemaObject | undefin
 
   if (trimmed.startsWith("[")) {
     const block = extractBalanced(trimmed, 0, "[", "]");
-    const firstItem = block ? splitTopLevel(block.slice(1, -1), ",")[0] : undefined;
+    const firstItem = block
+      ? splitTopLevel(block.slice(1, -1), ",")[0]
+      : undefined;
     return {
       type: "array",
-      items: firstItem ? inferSchemaFromJsExpression(firstItem) ?? { type: "string" } : { type: "string" },
+      items: firstItem
+        ? (inferSchemaFromJsExpression(firstItem) ?? { type: "string" })
+        : { type: "string" },
     };
   }
 
@@ -1788,7 +2223,9 @@ function inferSchemaFromJsExpression(expression: string): SchemaObject | undefin
         continue;
       }
 
-      properties[property.key] = inferSchemaFromJsExpression(property.value) ?? { type: "string" };
+      properties[property.key] = inferSchemaFromJsExpression(
+        property.value,
+      ) ?? { type: "string" };
     }
 
     return {
@@ -1800,13 +2237,18 @@ function inferSchemaFromJsExpression(expression: string): SchemaObject | undefin
   return { type: "string" };
 }
 
-function buildExampleFromJsExpression(expression: string, context?: JsExampleContext): unknown {
+function buildExampleFromJsExpression(
+  expression: string,
+  context?: JsExampleContext,
+): unknown {
   const trimmed = expression.trim();
   if (!trimmed) {
     return undefined;
   }
 
-  const parsedInteger = trimmed.match(/^(?:Number\.)?parseInt\((.+?)(?:,\s*\d+)?\)$/);
+  const parsedInteger = trimmed.match(
+    /^(?:Number\.)?parseInt\((.+?)(?:,\s*\d+)?\)$/,
+  );
   if (parsedInteger?.[1]) {
     const resolved = buildExampleFromJsExpression(parsedInteger[1], context);
     return typeof resolved === "number" ? Math.trunc(resolved) : 1;
@@ -1840,7 +2282,10 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
 
   const nullishOperands = splitTopLevelSequence(trimmed, "??");
   if (nullishOperands.length > 1) {
-    const structuralFallback = selectStructuredFallbackOperand(nullishOperands, context);
+    const structuralFallback = selectStructuredFallbackOperand(
+      nullishOperands,
+      context,
+    );
     if (structuralFallback) {
       return buildExampleFromJsExpression(structuralFallback, context);
     }
@@ -1856,7 +2301,10 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
 
   const fallbackOperands = splitTopLevelSequence(trimmed, "||");
   if (fallbackOperands.length > 1) {
-    const structuralFallback = selectStructuredFallbackOperand(fallbackOperands, context);
+    const structuralFallback = selectStructuredFallbackOperand(
+      fallbackOperands,
+      context,
+    );
     if (structuralFallback) {
       return buildExampleFromJsExpression(structuralFallback, context);
     }
@@ -1891,7 +2339,10 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
     return stringLiteral;
   }
 
-  const requestAccessorExample = inferJsRequestAccessorExample(trimmed, context);
+  const requestAccessorExample = inferJsRequestAccessorExample(
+    trimmed,
+    context,
+  );
   if (requestAccessorExample !== undefined) {
     return requestAccessorExample;
   }
@@ -1902,7 +2353,9 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
       return [];
     }
 
-    return splitTopLevel(block.slice(1, -1), ",").map((item) => buildExampleFromJsExpression(item, context));
+    return splitTopLevel(block.slice(1, -1), ",").map((item) =>
+      buildExampleFromJsExpression(item, context),
+    );
   }
 
   if (trimmed.startsWith("{")) {
@@ -1918,7 +2371,10 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
         continue;
       }
 
-      result[property.key] = buildExampleFromJsExpression(property.value, context);
+      result[property.key] = buildExampleFromJsExpression(
+        property.value,
+        context,
+      );
     }
     return result;
   }
@@ -1933,7 +2389,10 @@ function buildExampleFromJsExpression(expression: string, context?: JsExampleCon
   return "";
 }
 
-function materializeJsArgumentExpression(expression: string, context?: JsExampleContext): string {
+function materializeJsArgumentExpression(
+  expression: string,
+  context?: JsExampleContext,
+): string {
   const example = buildExampleFromJsExpression(expression, context);
   if (example === undefined || example === "") {
     return expression;
@@ -1954,7 +2413,10 @@ function inferSchemaFromJsExample(example: unknown): SchemaObject | undefined {
   if (Array.isArray(example)) {
     return {
       type: "array",
-      items: example.length > 0 ? inferSchemaFromJsExample(example[0]) ?? { type: "string" } : { type: "string" },
+      items:
+        example.length > 0
+          ? (inferSchemaFromJsExample(example[0]) ?? { type: "string" })
+          : { type: "string" },
     };
   }
 
@@ -1962,14 +2424,21 @@ function inferSchemaFromJsExample(example: unknown): SchemaObject | undefined {
     case "string":
       return { type: "string" };
     case "number":
-      return Number.isInteger(example) ? { type: "integer" } : { type: "number" };
+      return Number.isInteger(example)
+        ? { type: "integer" }
+        : { type: "number" };
     case "boolean":
       return { type: "boolean" };
     case "object":
       return {
         type: "object",
         properties: Object.fromEntries(
-          Object.entries(example as Record<string, unknown>).map(([key, value]) => [key, inferSchemaFromJsExample(value) ?? { type: "string" }]),
+          Object.entries(example as Record<string, unknown>).map(
+            ([key, value]) => [
+              key,
+              inferSchemaFromJsExample(value) ?? { type: "string" },
+            ],
+          ),
         ),
       };
     default:
@@ -1997,7 +2466,9 @@ function serializeJsExample(example: unknown): string {
   return '""';
 }
 
-function parseObjectLiteralEntry(entry: string): { key: string; value: string; } | null {
+function parseObjectLiteralEntry(
+  entry: string,
+): { key: string; value: string } | null {
   const trimmed = entry.trim();
   if (!trimmed || trimmed.startsWith("...")) {
     return null;
@@ -2030,7 +2501,10 @@ function createJsExampleContext(
 ): JsExampleContext {
   const assignments = new Map(seedAssignments ?? []);
 
-  for (const [name, expression] of extractJsVariableAssignments(body, reqName)) {
+  for (const [name, expression] of extractJsVariableAssignments(
+    body,
+    reqName,
+  )) {
     assignments.set(name, expression);
   }
 
@@ -2042,10 +2516,15 @@ function createJsExampleContext(
   };
 }
 
-function extractJsVariableAssignments(body: string, reqName: string): Map<string, string> {
+function extractJsVariableAssignments(
+  body: string,
+  reqName: string,
+): Map<string, string> {
   const assignments = new Map<string, string>();
 
-  for (const match of body.matchAll(/(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*/g)) {
+  for (const match of body.matchAll(
+    /(?:const|let|var)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*/g,
+  )) {
     const variableName = match[1];
     const startIndex = match.index ?? -1;
     if (!variableName || startIndex < 0) {
@@ -2062,7 +2541,10 @@ function extractJsVariableAssignments(body: string, reqName: string): Map<string
   }
 
   for (const target of ["body", "query", "params", "headers"] as const) {
-    const regex = new RegExp(`(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.${target}\\b`, "g");
+    const regex = new RegExp(
+      `(?:const|let|var)\\s+\\{\\s*([^}]+)\\s*\\}\\s*=\\s*${escapeRegExp(reqName)}\\.${target}\\b`,
+      "g",
+    );
     for (const match of body.matchAll(regex)) {
       const destructured = match[1];
       if (!destructured) {
@@ -2075,12 +2557,15 @@ function extractJsVariableAssignments(body: string, reqName: string): Map<string
           continue;
         }
 
-        const accessor = target === "headers"
-          ? `${reqName}.headers[${JSON.stringify(parsed.sourceName)}]`
-          : `${reqName}.${target}.${parsed.sourceName}`;
+        const accessor =
+          target === "headers"
+            ? `${reqName}.headers[${JSON.stringify(parsed.sourceName)}]`
+            : `${reqName}.${target}.${parsed.sourceName}`;
         assignments.set(
           parsed.localName,
-          parsed.defaultExpression ? `${accessor} ?? ${parsed.defaultExpression}` : accessor,
+          parsed.defaultExpression
+            ? `${accessor} ?? ${parsed.defaultExpression}`
+            : accessor,
         );
       }
     }
@@ -2091,7 +2576,11 @@ function extractJsVariableAssignments(body: string, reqName: string): Map<string
 
 function parseJsDestructuredAssignment(
   part: string,
-): { sourceName: string; localName: string; defaultExpression?: string; } | null {
+): {
+  sourceName: string;
+  localName: string;
+  defaultExpression?: string;
+} | null {
   const cleaned = part.trim();
   if (!cleaned || cleaned.startsWith("...")) {
     return null;
@@ -2103,7 +2592,10 @@ function parseJsDestructuredAssignment(
     return null;
   }
 
-  const pieces = withoutDefault.split(":").map((value: string) => value.trim()).filter(Boolean);
+  const pieces = withoutDefault
+    .split(":")
+    .map((value: string) => value.trim())
+    .filter(Boolean);
   const sourceName = pieces[0];
   const localName = pieces[1] ?? sourceName;
   if (!sourceName || !localName) {
@@ -2117,7 +2609,10 @@ function parseJsDestructuredAssignment(
   };
 }
 
-function resolveJsVariableExample(name: string, context?: JsExampleContext): unknown {
+function resolveJsVariableExample(
+  name: string,
+  context?: JsExampleContext,
+): unknown {
   if (!context) {
     return undefined;
   }
@@ -2150,7 +2645,10 @@ function inferExpressRequestFieldSchema(
   defaultExpression?: string,
 ): SchemaObject {
   if (defaultExpression) {
-    const defaultExample = buildExampleFromJsExpression(defaultExpression, context);
+    const defaultExample = buildExampleFromJsExpression(
+      defaultExpression,
+      context,
+    );
     const inferred = inferSchemaFromJsExample(defaultExample);
     if (inferred) {
       return inferred;
@@ -2158,11 +2656,15 @@ function inferExpressRequestFieldSchema(
   }
 
   for (const expression of context.assignments.values()) {
-    if (!expressionReferencesRequestField(expression, reqName, target, fieldName)) {
+    if (
+      !expressionReferencesRequestField(expression, reqName, target, fieldName)
+    ) {
       continue;
     }
 
-    const inferred = inferSchemaFromJsExample(buildExampleFromJsExpression(expression, context));
+    const inferred = inferSchemaFromJsExample(
+      buildExampleFromJsExpression(expression, context),
+    );
     if (inferred) {
       return inferred;
     }
@@ -2178,56 +2680,95 @@ function expressionReferencesRequestField(
   fieldName: string,
 ): boolean {
   const patterns = [
-    new RegExp(`${escapeRegExp(reqName)}\\.${target}\\.(${escapeRegExp(fieldName)})\\b`),
-    new RegExp(`${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]${escapeRegExp(fieldName)}["'\`]\\s*\\]`),
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.${target}\\.(${escapeRegExp(fieldName)})\\b`,
+    ),
+    new RegExp(
+      `${escapeRegExp(reqName)}\\.${target}\\[\\s*["'\`]${escapeRegExp(fieldName)}["'\`]\\s*\\]`,
+    ),
   ];
 
   return patterns.some((pattern) => pattern.test(expression));
 }
 
-function inferJsRequestAccessorExample(expression: string, context?: JsExampleContext): unknown {
+function inferJsRequestAccessorExample(
+  expression: string,
+  context?: JsExampleContext,
+): unknown {
   const reqName = context?.reqName ?? "req";
-  const directBody = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.body\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  const directBody = expression.match(
+    new RegExp(`^${escapeRegExp(reqName)}\\.body\\.([A-Za-z_][A-Za-z0-9_]*)$`),
+  );
   if (directBody?.[1]) {
     return buildJsFieldExample(directBody[1], "body");
   }
 
-  const directQuery = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.query\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  const directQuery = expression.match(
+    new RegExp(`^${escapeRegExp(reqName)}\\.query\\.([A-Za-z_][A-Za-z0-9_]*)$`),
+  );
   if (directQuery?.[1]) {
     return buildJsFieldExample(directQuery[1], "query");
   }
 
-  const directParam = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.params\\.([A-Za-z_][A-Za-z0-9_]*)$`));
+  const directParam = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.params\\.([A-Za-z_][A-Za-z0-9_]*)$`,
+    ),
+  );
   if (directParam?.[1]) {
     return buildJsFieldExample(directParam[1], "params");
   }
 
-  const bodyBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.body\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  const bodyBracket = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.body\\[(["'\`])([^"'\\\`]+)\\1\\]$`,
+    ),
+  );
   if (bodyBracket?.[2]) {
     return buildJsFieldExample(bodyBracket[2], "body");
   }
 
-  const queryBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.query\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  const queryBracket = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.query\\[(["'\`])([^"'\\\`]+)\\1\\]$`,
+    ),
+  );
   if (queryBracket?.[2]) {
     return buildJsFieldExample(queryBracket[2], "query");
   }
 
-  const paramBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.params\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  const paramBracket = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.params\\[(["'\`])([^"'\\\`]+)\\1\\]$`,
+    ),
+  );
   if (paramBracket?.[2]) {
     return buildJsFieldExample(paramBracket[2], "params");
   }
 
-  const headerBracket = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.headers\\[(["'\`])([^"'\\\`]+)\\1\\]$`));
+  const headerBracket = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.headers\\[(["'\`])([^"'\\\`]+)\\1\\]$`,
+    ),
+  );
   if (headerBracket?.[2]) {
     return buildJsFieldExample(headerBracket[2], "headers");
   }
 
-  const headerDot = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)$`));
+  const headerDot = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.headers\\.([A-Za-z_][A-Za-z0-9_-]*)$`,
+    ),
+  );
   if (headerDot?.[1]) {
     return buildJsFieldExample(headerDot[1], "headers");
   }
 
-  const getHeader = expression.match(new RegExp(`^${escapeRegExp(reqName)}\\.(?:get|header)\\((["'\`])([^"'\\\`]+)\\1\\)$`));
+  const getHeader = expression.match(
+    new RegExp(
+      `^${escapeRegExp(reqName)}\\.(?:get|header)\\((["'\`])([^"'\\\`]+)\\1\\)$`,
+    ),
+  );
   if (getHeader?.[2]) {
     return buildJsFieldExample(getHeader[2], "headers");
   }
@@ -2251,7 +2792,9 @@ function buildJsFieldExample(
     }
 
     if (normalized.includes("token")) {
-      return fieldName === fieldName.toUpperCase() ? `${fieldName}_VALUE` : "token";
+      return fieldName === fieldName.toUpperCase()
+        ? `${fieldName}_VALUE`
+        : "token";
     }
 
     return `${fieldName}_VALUE`;
@@ -2332,18 +2875,22 @@ function buildExpressOperationId(route: RouteRecord, pathname: string): string {
 }
 
 function buildDefaultResponses(method: HttpMethod): NormalizedResponse[] {
-  return [{
-    statusCode: defaultStatusByMethod[method],
-    description: "Generated default response",
-  }];
+  return [
+    {
+      statusCode: defaultStatusByMethod[method],
+      description: "Generated default response",
+    },
+  ];
 }
 
 function normalizeExpressPath(pathname: string): string {
-  return pathname
-    .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
-    .replace(/\*([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
-    .replace(/\/+/g, "/")
-    .replace(/\/$/, "") || "/";
+  return (
+    pathname
+      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
+      .replace(/\*([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
+      .replace(/\/+/g, "/")
+      .replace(/\/$/, "") || "/"
+  );
 }
 
 function extractPathParameters(pathname: string): NormalizedParameter[] {
@@ -2375,20 +2922,31 @@ function parseParamList(rawParams: string): string[] {
     .map((parameter) => {
       const withoutDefault = splitOnce(parameter, "=")[0]?.trim() ?? parameter;
       const separatorIndex = findTopLevelSeparator(withoutDefault, ":");
-      const candidate = separatorIndex >= 0 ? withoutDefault.slice(0, separatorIndex) : withoutDefault;
+      const candidate =
+        separatorIndex >= 0
+          ? withoutDefault.slice(0, separatorIndex)
+          : withoutDefault;
       return candidate.replace(/^[{[]|[}\]]$/g, "").trim();
     })
     .filter((parameter) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(parameter));
 }
 
-function normalizeExpressStatusCodeExpression(expression: string, context: JsExampleContext): string | undefined {
+function normalizeExpressStatusCodeExpression(
+  expression: string,
+  context: JsExampleContext,
+): string | undefined {
   const trimmed = expression.trim();
   if (/^\d{3}$/.test(trimmed)) {
     return trimmed;
   }
 
   const resolved = buildExampleFromJsExpression(trimmed, context);
-  if (typeof resolved === "number" && Number.isInteger(resolved) && resolved >= 100 && resolved <= 599) {
+  if (
+    typeof resolved === "number" &&
+    Number.isInteger(resolved) &&
+    resolved >= 100 &&
+    resolved <= 599
+  ) {
     return String(resolved);
   }
 
@@ -2396,15 +2954,20 @@ function normalizeExpressStatusCodeExpression(expression: string, context: JsExa
 }
 
 function isBooleanComparisonExpression(expression: string): boolean {
-  return /===\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression)
-    || /!==\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression);
+  return (
+    /===\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression) ||
+    /!==\s*(?:true|false|["'`](?:true|false)["'`])/.test(expression)
+  );
 }
 
 function selectStructuredFallbackOperand(
   operands: string[],
   context?: JsExampleContext,
 ): string | undefined {
-  const hasRequestOperand = operands.some((operand) => inferJsRequestAccessorExample(operand.trim(), context) !== undefined);
+  const hasRequestOperand = operands.some(
+    (operand) =>
+      inferJsRequestAccessorExample(operand.trim(), context) !== undefined,
+  );
   if (!hasRequestOperand) {
     return undefined;
   }
@@ -2412,7 +2975,11 @@ function selectStructuredFallbackOperand(
   return operands.find((operand) => /^[\[{]/.test(operand.trim()));
 }
 
-function resolveLocalModule(fromFile: string, specifier: string, knownFiles: Set<string>): string | null {
+function resolveLocalModule(
+  fromFile: string,
+  specifier: string,
+  knownFiles: Set<string>,
+): string | null {
   const basePath = path.resolve(path.dirname(fromFile), specifier);
   const candidates = [
     basePath,
@@ -2435,17 +3002,27 @@ function resolveLocalModule(fromFile: string, specifier: string, knownFiles: Set
   return null;
 }
 
-function fileDeclaresRouter(file: ExpressFile | undefined, symbolName: string): boolean {
+function fileDeclaresRouter(
+  file: ExpressFile | undefined,
+  symbolName: string,
+): boolean {
   if (!file) {
     return false;
   }
 
-  const appRegex = new RegExp(`(?:const|let|var)\\s+${escapeRegExp(symbolName)}\\s*=\\s*express\\s*\\(\\s*\\)`);
-  const routerRegex = new RegExp(`(?:const|let|var)\\s+${escapeRegExp(symbolName)}\\s*=\\s*(?:express\\s*\\.\\s*Router|Router)\\s*\\(\\s*\\)`);
+  const appRegex = new RegExp(
+    `(?:const|let|var)\\s+${escapeRegExp(symbolName)}\\s*=\\s*express\\s*\\(\\s*\\)`,
+  );
+  const routerRegex = new RegExp(
+    `(?:const|let|var)\\s+${escapeRegExp(symbolName)}\\s*=\\s*(?:express\\s*\\.\\s*Router|Router)\\s*\\(\\s*\\)`,
+  );
   return appRegex.test(file.content) || routerRegex.test(file.content);
 }
 
-function matchAssignmentObject(content: string, assignment: string): string | null {
+function matchAssignmentObject(
+  content: string,
+  assignment: string,
+): string | null {
   const regex = new RegExp(`${escapeRegExp(assignment)}\\s*=\\s*\\{`, "g");
   const match = regex.exec(content);
   if (!match) {
@@ -2453,7 +3030,9 @@ function matchAssignmentObject(content: string, assignment: string): string | nu
   }
 
   const braceStart = content.indexOf("{", match.index);
-  return braceStart >= 0 ? extractBalanced(content, braceStart, "{", "}") : null;
+  return braceStart >= 0
+    ? extractBalanced(content, braceStart, "{", "}")
+    : null;
 }
 
 function matchExportDefaultObject(content: string): string | null {
@@ -2464,7 +3043,9 @@ function matchExportDefaultObject(content: string): string | null {
   }
 
   const braceStart = content.indexOf("{", match.index);
-  return braceStart >= 0 ? extractBalanced(content, braceStart, "{", "}") : null;
+  return braceStart >= 0
+    ? extractBalanced(content, braceStart, "{", "}")
+    : null;
 }
 
 function parseObjectExportMap(block: string): Record<string, string> {
@@ -2505,7 +3086,7 @@ function findTopLevelSeparator(input: string, separator: string): number {
   let parenDepth = 0;
   let bracketDepth = 0;
   let braceDepth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
+  let quote: "'" | '"' | "`" | null = null;
   let escaped = false;
 
   for (let index = 0; index < input.length; index += 1) {
@@ -2521,7 +3102,7 @@ function findTopLevelSeparator(input: string, separator: string): number {
       continue;
     }
 
-    if (character === "'" || character === "\"" || character === "`") {
+    if (character === "'" || character === '"' || character === "`") {
       if (quote === character) {
         quote = null;
       } else if (!quote) {
@@ -2547,10 +3128,10 @@ function findTopLevelSeparator(input: string, separator: string): number {
     } else if (character === "}") {
       braceDepth -= 1;
     } else if (
-      character === separator
-      && parenDepth === 0
-      && bracketDepth === 0
-      && braceDepth === 0
+      character === separator &&
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0
     ) {
       return index;
     }
@@ -2565,7 +3146,7 @@ function splitTopLevelSequence(input: string, sequence: string): string[] {
   let parenDepth = 0;
   let bracketDepth = 0;
   let braceDepth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
+  let quote: "'" | '"' | "`" | null = null;
   let escaped = false;
 
   for (let index = 0; index < input.length; index += 1) {
@@ -2583,7 +3164,7 @@ function splitTopLevelSequence(input: string, sequence: string): string[] {
       continue;
     }
 
-    if (character === "'" || character === "\"" || character === "`") {
+    if (character === "'" || character === '"' || character === "`") {
       if (quote === character) {
         quote = null;
       } else if (!quote) {
@@ -2607,10 +3188,10 @@ function splitTopLevelSequence(input: string, sequence: string): string[] {
       } else if (character === "}") {
         braceDepth -= 1;
       } else if (
-        input.startsWith(sequence, index)
-        && parenDepth === 0
-        && bracketDepth === 0
-        && braceDepth === 0
+        input.startsWith(sequence, index) &&
+        parenDepth === 0 &&
+        bracketDepth === 0 &&
+        braceDepth === 0
       ) {
         if (current.trim()) {
           results.push(current.trim());
@@ -2631,20 +3212,14 @@ function splitTopLevelSequence(input: string, sequence: string): string[] {
   return results.length > 0 ? results : [input.trim()];
 }
 
-function splitOnce(input: string, delimiter: string): [string, string] {
-  const index = input.indexOf(delimiter);
-  if (index < 0) {
-    return [input, ""];
-  }
-
-  return [input.slice(0, index), input.slice(index + delimiter.length)];
-}
-
-function findTopLevelStatementTerminator(input: string, startIndex: number): number {
+function findTopLevelStatementTerminator(
+  input: string,
+  startIndex: number,
+): number {
   let parenDepth = 0;
   let bracketDepth = 0;
   let braceDepth = 0;
-  let quote: "'" | "\"" | "`" | null = null;
+  let quote: "'" | '"' | "`" | null = null;
   let escaped = false;
 
   for (let index = startIndex; index < input.length; index += 1) {
@@ -2660,7 +3235,7 @@ function findTopLevelStatementTerminator(input: string, startIndex: number): num
       continue;
     }
 
-    if (character === "'" || character === "\"" || character === "`") {
+    if (character === "'" || character === '"' || character === "`") {
       if (quote === character) {
         quote = null;
       } else if (!quote) {
@@ -2686,10 +3261,10 @@ function findTopLevelStatementTerminator(input: string, startIndex: number): num
     } else if (character === "}") {
       braceDepth -= 1;
     } else if (
-      character === ";"
-      && parenDepth === 0
-      && bracketDepth === 0
-      && braceDepth === 0
+      character === ";" &&
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0
     ) {
       return index;
     }
@@ -2700,10 +3275,6 @@ function findTopLevelStatementTerminator(input: string, startIndex: number): num
 
 function dedupeValues(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function capitalize(input: string): string {
