@@ -220,6 +220,96 @@ export function splitTopLevelSequence(
 }
 
 /**
+ * Finds the first top-level terminator character after startIndex.
+ * Ignores candidates inside nested parentheses/brackets/braces and string literals.
+ *
+ * @param input - Source string to scan
+ * @param startIndex - Position to begin scanning from
+ * @param terminators - Candidate terminator characters (e.g. [";"], ["\n", ";"])
+ * @returns Index of the first matching top-level terminator, or -1 when absent
+ */
+export function findTopLevelTerminator(
+  input: string,
+  startIndex: number,
+  terminators: string[],
+): number {
+  const terminatorSet = new Set(terminators);
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  for (let index = startIndex; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === '"' || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
+    if (character === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      braceDepth -= 1;
+      continue;
+    }
+
+    if (
+      terminatorSet.has(character) &&
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * Escapes regular-expression metacharacters in a string.
  *
  * @param value - Raw string that may contain regex control characters

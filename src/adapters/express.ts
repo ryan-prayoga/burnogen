@@ -7,6 +7,7 @@ import { dedupeParameters, dedupeResponsesByStatusCode } from "../core/dedupe";
 import {
   escapeRegExp,
   extractBalanced,
+  findTopLevelTerminator,
   splitOnce,
   splitTopLevel,
   splitTopLevelSequence,
@@ -1151,7 +1152,7 @@ function extractJoiSchemaFields(
     const equalsIndex = content.indexOf("=", startIndex);
     const endIndex =
       equalsIndex >= 0
-        ? findTopLevelStatementTerminator(content, equalsIndex + 1)
+        ? findTopLevelTerminator(content, equalsIndex + 1, [";"])
         : -1;
     if (equalsIndex < 0 || endIndex < 0) {
       continue;
@@ -1186,7 +1187,7 @@ function extractInlineJoiSchemaFields(
       continue;
     }
 
-    const endIndex = findTopLevelStatementTerminator(body, startIndex);
+    const endIndex = findTopLevelTerminator(body, startIndex, [";"]);
     if (endIndex < 0) {
       continue;
     }
@@ -2161,7 +2162,7 @@ function extractReturnStatements(body: string): string[] {
       break;
     }
 
-    const statementEnd = findTopLevelStatementTerminator(body, returnIndex);
+    const statementEnd = findTopLevelTerminator(body, returnIndex, [";"]);
     if (statementEnd < 0) {
       break;
     }
@@ -2536,7 +2537,7 @@ function extractJsVariableAssignments(
     }
 
     const equalsIndex = body.indexOf("=", startIndex);
-    const endIndex = findTopLevelStatementTerminator(body, equalsIndex + 1);
+    const endIndex = findTopLevelTerminator(body, equalsIndex + 1, [";"]);
     if (equalsIndex < 0 || endIndex < 0) {
       continue;
     }
@@ -3131,67 +3132,6 @@ function findTopLevelSeparator(input: string, separator: string): number {
       braceDepth -= 1;
     } else if (
       character === separator &&
-      parenDepth === 0 &&
-      bracketDepth === 0 &&
-      braceDepth === 0
-    ) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function findTopLevelStatementTerminator(
-  input: string,
-  startIndex: number,
-): number {
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let braceDepth = 0;
-  let quote: "'" | '"' | "`" | null = null;
-  let escaped = false;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (character === "'" || character === '"' || character === "`") {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      continue;
-    }
-
-    if (quote) {
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-    } else if (character === ")") {
-      parenDepth -= 1;
-    } else if (character === "[") {
-      bracketDepth += 1;
-    } else if (character === "]") {
-      bracketDepth -= 1;
-    } else if (character === "{") {
-      braceDepth += 1;
-    } else if (character === "}") {
-      braceDepth -= 1;
-    } else if (
-      character === ";" &&
       parenDepth === 0 &&
       bracketDepth === 0 &&
       braceDepth === 0

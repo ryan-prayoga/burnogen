@@ -7,6 +7,7 @@ import { dedupeParameters } from "../core/dedupe";
 import {
   escapeRegExp,
   extractBalanced,
+  findTopLevelTerminator,
   splitOnce,
   splitTopLevel,
 } from "../core/parsing";
@@ -1540,7 +1541,13 @@ function extractGoVariableAssignments(body: string): Map<string, string> {
     }
 
     const equalsIndex = body.indexOf(":=", startIndex);
-    const endIndex = findGoStatementTerminator(body, equalsIndex + 2);
+    const statementTerminator = findTopLevelTerminator(
+      body,
+      equalsIndex + 2,
+      ["\n", ";"],
+    );
+    const endIndex =
+      statementTerminator >= 0 ? statementTerminator : body.length;
     if (equalsIndex < 0 || endIndex < 0) {
       continue;
     }
@@ -1724,121 +1731,3 @@ function capitalize(input: string): string {
   return input ? `${input[0].toUpperCase()}${input.slice(1)}` : input;
 }
 
-function findTopLevelStatementTerminator(
-  input: string,
-  startIndex: number,
-): number {
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let braceDepth = 0;
-  let quote: "'" | '"' | "`" | null = null;
-  let escaped = false;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (character === "'" || character === '"' || character === "`") {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      continue;
-    }
-
-    if (quote) {
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-    } else if (character === ")") {
-      parenDepth -= 1;
-    } else if (character === "[") {
-      bracketDepth += 1;
-    } else if (character === "]") {
-      bracketDepth -= 1;
-    } else if (character === "{") {
-      braceDepth += 1;
-    } else if (character === "}") {
-      braceDepth -= 1;
-    } else if (
-      character === ";" &&
-      parenDepth === 0 &&
-      bracketDepth === 0 &&
-      braceDepth === 0
-    ) {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function findGoStatementTerminator(input: string, startIndex: number): number {
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let braceDepth = 0;
-  let quote: "'" | '"' | "`" | null = null;
-  let escaped = false;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (character === "'" || character === '"' || character === "`") {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      continue;
-    }
-
-    if (quote) {
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-    } else if (character === ")") {
-      parenDepth -= 1;
-    } else if (character === "[") {
-      bracketDepth += 1;
-    } else if (character === "]") {
-      bracketDepth -= 1;
-    } else if (character === "{") {
-      braceDepth += 1;
-    } else if (character === "}") {
-      braceDepth -= 1;
-    } else if (
-      (character === "\n" || character === ";") &&
-      parenDepth === 0 &&
-      bracketDepth === 0 &&
-      braceDepth === 0
-    ) {
-      return index;
-    }
-  }
-
-  return input.length;
-}

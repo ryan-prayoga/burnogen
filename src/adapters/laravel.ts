@@ -6,6 +6,7 @@ import { dedupeParameters, dedupeResponsesByStatusCode } from "../core/dedupe";
 import { defaultStatusForMethod } from "../core/responses";
 import {
   extractBalanced,
+  findTopLevelTerminator,
   splitTopLevel,
   splitTopLevelSequence,
 } from "../core/parsing";
@@ -1485,9 +1486,10 @@ function extractReturnStatements(methodBody: string): string[] {
       break;
     }
 
-    const statementEnd = findTopLevelStatementTerminator(
+    const statementEnd = findTopLevelTerminator(
       methodBody,
       returnIndex,
+      [";"],
     );
     if (statementEnd < 0) {
       break;
@@ -1546,9 +1548,10 @@ function extractPhpVariableAssignments(
       continue;
     }
 
-    const statementEnd = findTopLevelStatementTerminator(
+    const statementEnd = findTopLevelTerminator(
       methodBody,
       equalsIndex + 1,
+      [";"],
     );
     if (statementEnd < 0) {
       continue;
@@ -2403,85 +2406,6 @@ function countBraceDelta(input: string): number {
   }
 
   return delta;
-}
-
-function findTopLevelStatementTerminator(
-  input: string,
-  startIndex: number,
-): number {
-  let parenDepth = 0;
-  let bracketDepth = 0;
-  let braceDepth = 0;
-  let quote: "'" | '"' | null = null;
-  let escaped = false;
-
-  for (let index = startIndex; index < input.length; index += 1) {
-    const character = input[index];
-
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaped = true;
-      continue;
-    }
-
-    if (character === "'" || character === '"') {
-      if (quote === character) {
-        quote = null;
-      } else if (!quote) {
-        quote = character;
-      }
-      continue;
-    }
-
-    if (quote) {
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-      continue;
-    }
-
-    if (character === ")") {
-      parenDepth -= 1;
-      continue;
-    }
-
-    if (character === "[") {
-      bracketDepth += 1;
-      continue;
-    }
-
-    if (character === "]") {
-      bracketDepth -= 1;
-      continue;
-    }
-
-    if (character === "{") {
-      braceDepth += 1;
-      continue;
-    }
-
-    if (character === "}") {
-      braceDepth -= 1;
-      continue;
-    }
-
-    if (
-      character === ";" &&
-      parenDepth === 0 &&
-      bracketDepth === 0 &&
-      braceDepth === 0
-    ) {
-      return index;
-    }
-  }
-
-  return -1;
 }
 
 function splitOnce(input: string, delimiter: string): [string, string] {
