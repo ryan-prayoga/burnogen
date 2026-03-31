@@ -1486,11 +1486,7 @@ function extractReturnStatements(methodBody: string): string[] {
       break;
     }
 
-    const statementEnd = findTopLevelTerminator(
-      methodBody,
-      returnIndex,
-      [";"],
-    );
+    const statementEnd = findTopLevelTerminator(methodBody, returnIndex, [";"]);
     if (statementEnd < 0) {
       break;
     }
@@ -1548,11 +1544,9 @@ function extractPhpVariableAssignments(
       continue;
     }
 
-    const statementEnd = findTopLevelTerminator(
-      methodBody,
-      equalsIndex + 1,
-      [";"],
-    );
+    const statementEnd = findTopLevelTerminator(methodBody, equalsIndex + 1, [
+      ";",
+    ]);
     if (statementEnd < 0) {
       continue;
     }

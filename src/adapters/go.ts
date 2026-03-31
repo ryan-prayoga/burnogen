@@ -1541,11 +1541,10 @@ function extractGoVariableAssignments(body: string): Map<string, string> {
     }
 
     const equalsIndex = body.indexOf(":=", startIndex);
-    const statementTerminator = findTopLevelTerminator(
-      body,
-      equalsIndex + 2,
-      ["\n", ";"],
-    );
+    const statementTerminator = findTopLevelTerminator(body, equalsIndex + 2, [
+      "\n",
+      ";",
+    ]);
     const endIndex =
       statementTerminator >= 0 ? statementTerminator : body.length;
     if (equalsIndex < 0 || endIndex < 0) {
@@ -1730,4 +1729,3 @@ function normalizeGoFieldName(input: string): string {
 function capitalize(input: string): string {
   return input ? `${input[0].toUpperCase()}${input.slice(1)}` : input;
 }
-
