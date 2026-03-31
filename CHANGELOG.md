@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.2
+
+_Released: 2026-03-31_
+
+- Refactor parser utilities to share top-level sequence and statement-terminator scanning across Express, Laravel, and Go adapters
+- Reduce duplicated adapter parsing logic while preserving existing generation behavior and test coverage expectations
+- Apply minor adapter formatting cleanup and normalize changelog release-date emphasis for consistency
+
 ## v0.4.1
 
 _Released: 2026-03-30_
