@@ -3,7 +3,8 @@
 ## Unreleased
 
 ## v0.4.1
-*Released: 2026-03-30*
+
+_Released: 2026-03-30_
 
 - Align `doctor` path resolution with config-root behavior used by `generate`, including explicit `--config` handling
 - Add regression coverage for `doctor` with explicit config location resolution
@@ -12,7 +13,8 @@
 - Sync README/demo quickstart endpoint counts and config contract docs with current generated output
 
 ## v0.4.0
-*Released: 2026-03-27*
+
+_Released: 2026-03-27_
 
 - Expand Express route inference for nested mounts, named router exports, chained routes, and broader auth middleware hints
 - Improve Express request/response inference for direct body access, typed route syntax, inline and nested Joi-backed schema hints, common helper wrappers, and richer demo coverage
