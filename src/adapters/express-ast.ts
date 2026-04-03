@@ -378,10 +378,60 @@ function parseRoutersAst(
     }
   }
 
-  // Now find route registrations: router.get('/path', handler)
+  // Now find route registrations for each router
   for (const router of routers) {
     if (router.filePath !== file.filePath) continue;
 
+    // Pre-scan: extract chain routes (router.route().get().put().delete())
+    // AST nesting makes this pattern very difficult to parse properly,
+    // so we use a regex pre-scan for this specific pattern.
+    // Pre-scan: extract chain routes (router.route().get().put().delete())
+    // We use simple text-based line scanning — avoids regex escaping hell
+    const text = file.content;
+    const fileLines = text.split("\n");
+    for (let ln = 0; ln < fileLines.length; ln++) {
+      const trimmed = fileLines[ln].trim();
+      // Match: routerName.route("path") or routerName.route('path')
+      const pathMatch = trimmed.match(new RegExp("^" + escapeRx(router.name) + "\\.route\\s*\\(\\s*(['\"`])([^'\"`\\s]+)\\1"));
+      if (!pathMatch) continue;
+      const routePath = pathMatch[2];
+
+      // Look ahead for chained method calls on following lines
+      let methodLine = ln + 1;
+      while (methodLine < fileLines.length) {
+        const methodTrimmed = fileLines[methodLine].trim();
+        if (methodTrimmed === ";" || methodTrimmed === "") break;
+        if (!methodTrimmed.startsWith(".")) break;
+
+        const methodMatch = methodTrimmed.match(/^\.(get|post|put|patch|delete|head|options)\s*\(([^)]*)\)/);
+        if (methodMatch) {
+          const method = methodMatch[1];
+          const argsText = methodMatch[2].trim();
+          const parts = argsText.split(",").map(s => s.trim()).filter(Boolean);
+          let handler = "anonymous";
+          const middleware: string[] = [];
+          if (parts.length > 0) {
+            const hMatch = parts[parts.length - 1].match(/([a-zA-Z_$]\w*)/);
+            if (hMatch) handler = hMatch[1];
+            for (let i = 0; i < parts.length - 1; i++) {
+              const mMatch = parts[i].match(/([a-zA-Z_$]\w*)/);
+              if (mMatch) middleware.push(mMatch[1]);
+            }
+          }
+          router.routes.push({
+            filePath: file.filePath,
+            line: ln + 1,
+            method: method as HttpMethod,
+            path: routePath,
+            middleware,
+            handler,
+          });
+        }
+        methodLine++;
+      }
+    }
+
+    // AST scan: direct router.get('/', handler), app.post('/', handler)
     for (const node of walkAst(file.ast)) {
       if (node.type !== "CallExpression") continue;
 
@@ -389,7 +439,9 @@ function parseRoutersAst(
       const objName = getTargetName(callee?.object);
       const propName = getPropertyName(callee?.property);
 
-      // router.get('/', handler), app.post('/', handler)
+      // Skip nodes that are part of a chain (callee.object is a CallExpression)
+      if (callee?.object?.type === "CallExpression") continue;
+
       if (objName === router.name && propName && httpMethods.includes(propName as HttpMethod)) {
         const args = node.arguments ?? [];
         const routePath = args.length > 0 ? getStringValue(args[0]) ?? "/" : "/";
@@ -413,77 +465,9 @@ function parseRoutersAst(
           handler,
         });
       }
-
-      // router.route('/path').get(handler).post(handler) — chain syntax
-      if (objName === router.name && propName === "route") {
-        const routeArgs = node.arguments ?? [];
-        const routePath = routeArgs.length > 0 ? getStringValue(routeArgs[0]) ?? "/" : "/";
-        // Walk the chain: .get(handler).post(handler)...
-        let chain = node;
-        while (chain) {
-          // Check if this call has a .property that is an HTTP method
-          const chainCall = findPropertyCalls(chain);
-          let foundChain = false;
-          for (const methodProp of httpMethods) {
-            if (chainCall.has(methodProp)) {
-              // Find the actual method call node
-              const methodNode = findChainedCallNode(chain, methodProp);
-              if (methodNode) {
-                const methodArgs = methodNode.arguments ?? [];
-                const methodHandler = methodArgs.length > 0 ? getTargetName(methodArgs[methodArgs.length > 1 ? methodArgs.length - 1 : 0]) ?? "anonymous" : "anonymous";
-                const methodMiddleware: string[] = [];
-                if (methodArgs.length > 1) {
-                  for (let i = 0; i < methodArgs.length - 1; i++) {
-                    const mw = getTargetName(methodArgs[i]);
-                    if (mw) methodMiddleware.push(mw);
-                  }
-                }
-
-                router.routes.push({
-                  filePath: file.filePath,
-                  line: getLoc(methodNode).line ?? 1,
-                  method: methodProp as HttpMethod,
-                  path: routePath,
-                  middleware: methodMiddleware,
-                  handler: methodHandler,
-                });
-              }
-              foundChain = true;
-              chain = chainCall.get(methodProp);
-              break;
-            }
-          }
-          if (!foundChain) break;
-        }
-      }
     }
   }
 
-  // Detect router-wide middleware: router.use(someMiddleware)
-  for (const router of routers) {
-    if (router.filePath !== file.filePath) continue;
-    for (const node of walkAst(file.ast)) {
-      if (node.type !== "CallExpression") continue;
-      const callee = node.callee;
-      if (callee?.type === "MemberExpression") {
-        const objName = getTargetName(callee.object);
-        const propName = getPropertyName(callee.property);
-        if (objName === router.name && propName === "use") {
-          for (const arg of node.arguments ?? []) {
-            const mwName = getTargetName(arg);
-            if (mwName && !httpMethods.includes(mwName as HttpMethod)) {
-              // Heuristic checks: not a router (routers have paths or come from other files)
-              if (!getStringValue(arg)) {
-                router.middleware.push(mwName);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return routers;
 }
 
 interface ChainedCallResult {
@@ -900,6 +884,10 @@ function resolveLocalModulePath(
 }
 
 // ─── AST walking ───────────────────────────────────────────────
+
+function escapeRx(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 function* walkAst(node: any, depth = 0): Generator<any> {
   if (!node || typeof node !== "object") return;
