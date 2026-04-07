@@ -13,11 +13,13 @@ export interface PhpExampleContext {
   assignments: Map<string, string>;
   cache: Map<string, unknown | typeof unresolvedPhpExample>;
   resolving: Set<string>;
+  selfExample?: Record<string, unknown>;
 }
 
 export function createPhpExampleContext(
   methodBody: string,
   seedAssignments?: Map<string, string>,
+  selfExample?: Record<string, unknown>,
 ): PhpExampleContext {
   const assignments = new Map(seedAssignments ?? []);
   for (const [variableName, expression] of extractPhpVariableAssignments(
@@ -30,6 +32,7 @@ export function createPhpExampleContext(
     assignments,
     cache: new Map(),
     resolving: new Set(),
+    selfExample,
   };
 }
 
@@ -141,11 +144,6 @@ function resolvePhpExampleValue(
     return null;
   }
 
-  const requestAccessorExample = inferLaravelRequestAccessorExample(value);
-  if (requestAccessorExample !== unresolvedPhpExample) {
-    return requestAccessorExample;
-  }
-
   const stringValue = parsePhpString(value);
   if (stringValue !== undefined) {
     return stringValue;
@@ -165,6 +163,11 @@ function resolvePhpExampleValue(
 
   if (/^-?\d+\.\d+$/.test(value)) {
     return Number.parseFloat(value);
+  }
+
+  const objectCastMatch = value.match(/^\(object\)\s*([\s\S]+)$/);
+  if (objectCastMatch?.[1]) {
+    return resolvePhpExampleValue(objectCastMatch[1], context);
   }
 
   if (value.startsWith("[") && value.endsWith("]")) {
@@ -196,11 +199,34 @@ function resolvePhpExampleValue(
     return resolvePhpVariableExample(directVariableMatch[1], context);
   }
 
+  const requestAccessorExample = inferLaravelRequestAccessorExample(value);
+  if (requestAccessorExample !== unresolvedPhpExample) {
+    return requestAccessorExample;
+  }
+
   const propertyAccessMatch = value.match(
-    /^\$[A-Za-z_][A-Za-z0-9_]*->([A-Za-z_][A-Za-z0-9_]*)$/,
+    /^\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)$/,
   );
-  if (propertyAccessMatch?.[1]) {
-    return buildPhpExampleForField(propertyAccessMatch[1]);
+  if (propertyAccessMatch?.[1] && propertyAccessMatch[2]) {
+    const baseName = propertyAccessMatch[1];
+    const propertyName = propertyAccessMatch[2];
+
+    if (baseName === "this" && context?.selfExample?.[propertyName] !== undefined) {
+      return context.selfExample[propertyName];
+    }
+
+    const baseValue = resolvePhpVariableExample(baseName, context);
+    if (
+      baseValue !== unresolvedPhpExample &&
+      baseValue &&
+      typeof baseValue === "object" &&
+      !Array.isArray(baseValue) &&
+      propertyName in baseValue
+    ) {
+      return (baseValue as Record<string, unknown>)[propertyName];
+    }
+
+    return buildPhpExampleForField(propertyName);
   }
 
   return unresolvedPhpExample;
@@ -245,41 +271,41 @@ function inferLaravelRequestAccessorExample(
   }> = [
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:input|get|post|json|string|query|header)\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:input|get|post|json|string|query|header)\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "string",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*integer\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*integer\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "integer",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:float|double)\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:float|double)\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "number",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*boolean\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*boolean\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "boolean",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:has|filled)\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:has|filled)\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "boolean",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:array|collect)\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*(?:array|collect)\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "array",
     },
     {
       regex:
-        /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*date\s*\(\s*['"]([^'"]+)['"]/,
+        /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))\s*->\s*date\s*\(\s*['"]([^'"]+)['"][\s\S]*\)$/,
       type: "date-time",
     },
     {
-      regex: /request\s*\(\s*['"]([^'"]+)['"]\s*\)/,
+      regex: /^request\s*\(\s*['"]([^'"]+)['"]\s*\)$/,
       type: "string",
     },
   ];
@@ -292,7 +318,7 @@ function inferLaravelRequestAccessorExample(
   }
 
   const onlyMatch = value.match(
-    /(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))(?:\s*->\s*safe\s*\(\s*\))?\s*->\s*only\s*\(\s*(\[[^\]]*\])\s*\)/,
+    /^(?:\$[A-Za-z_][A-Za-z0-9_]*|request\(\))(?:\s*->\s*safe\s*\(\s*\))?\s*->\s*only\s*\(\s*(\[[^\]]*\])\s*\)$/,
   );
   if (onlyMatch?.[1]) {
     return Object.fromEntries(
@@ -354,6 +380,10 @@ function buildPhpExampleForField(
     return fieldName === fieldName.toUpperCase()
       ? `${fieldName}_VALUE`
       : "token";
+  }
+
+  if (normalized.includes("trace")) {
+    return "trace_123";
   }
 
   if (normalized === "page" || normalized.endsWith("_page")) {

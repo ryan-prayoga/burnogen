@@ -95,8 +95,8 @@ describe("Laravel adapter", () => {
     expect(resourceShowSuccess?.example).toEqual({
       data: {
         id: 1,
-        name: "Jane Doe",
-        owner_email: "user@example.com",
+        name: "Launchpad",
+        owner_email: "owner@example.com",
       },
       meta: {
         trace_id: "trace_123",
@@ -158,5 +158,111 @@ describe("Laravel adapter", () => {
         code: "LARAVEL_AUTH_MIDDLEWARE_UNKNOWN",
       }),
     );
+  });
+
+  it("resolves namespaced Laravel controller groups with duplicate short class names", async () => {
+    const artifacts = await generateArtifacts(
+      fixturePath("laravel-namespaced-groups"),
+      defaultConfig(),
+    );
+
+    expect(artifacts.normalized.endpoints).toHaveLength(5);
+
+    const apiUsers = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/users" && endpoint.method === "get",
+    );
+    expect(apiUsers?.auth.type).toBe("bearer");
+    expect(apiUsers?.operationId).toBe("apiUsercontrollerIndex");
+    expect(apiUsers?.tags).toEqual(["ApiUser"]);
+    expect(apiUsers?.summary).toBe("Api\\UserController::index");
+    expect(apiUsers?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          data: [
+            {
+              id: 1,
+              name: "API Jane",
+              email: "api@example.com",
+              role: "member",
+            },
+          ],
+        },
+      }),
+    );
+
+    const apiStoreUser = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/users" && endpoint.method === "post",
+    );
+    expect(apiStoreUser?.operationId).toBe("apiUsercontrollerStore");
+    expect(apiStoreUser?.requestBody?.schema.properties?.email?.format).toBe("email");
+    expect(apiStoreUser?.requestBody?.schema.properties?.role?.enum).toEqual([
+      "member",
+      "owner",
+    ]);
+    expect(apiStoreUser?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          data: {
+            id: 2,
+            name: "API Owner",
+            email: "owner@example.com",
+            role: "owner",
+          },
+          meta: {
+            source: "api",
+          },
+        },
+      }),
+    );
+
+    const adminStoreUser = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/admin/users" && endpoint.method === "post",
+    );
+    expect(adminStoreUser?.operationId).toBe("adminUsercontrollerStore");
+    expect(adminStoreUser?.tags).toEqual(["AdminUser"]);
+    expect(adminStoreUser?.summary).toBe("Admin\\UserController::store");
+    expect(
+      adminStoreUser?.requestBody?.schema.properties?.permissions?.type,
+    ).toBe("array");
+    expect(adminStoreUser?.requestBody?.schema.properties?.role?.enum).toEqual([
+      "super-admin",
+      "auditor",
+    ]);
+    expect(adminStoreUser?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          data: {
+            id: 100,
+            name: "Security Admin",
+            permissions: ["manage-users", "audit-logs"],
+          },
+        },
+      }),
+    );
+
+    const status = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/status" && endpoint.method === "get",
+    );
+    expect(status?.auth.type).toBe("bearer");
+    expect(status?.parameters).toContainEqual(
+      expect.objectContaining({
+        name: "X-Trace-Id",
+        in: "header",
+      }),
+    );
+    expect(status?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          ok: true,
+          trace_id: "trace_123",
+        },
+      }),
+    );
+    expect(artifacts.warnings).toEqual([]);
   });
 });

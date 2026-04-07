@@ -12,6 +12,7 @@ import {
   type PhpExampleContext,
 } from "./examples";
 import {
+  type PhpFileContext,
   type PhpClassRecord,
   extractDirectReturnArrays,
   extractReturnStatements,
@@ -26,6 +27,7 @@ export async function extractLaravelResponses(
   controllerContent: string,
   baseContext?: PhpExampleContext,
   depth = 0,
+  fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse[]> {
   const responses = new Map<string, NormalizedResponse>();
   const exampleContext = createPhpExampleContext(
@@ -57,6 +59,7 @@ export async function extractLaravelResponses(
       controllerContent,
       exampleContext,
       depth,
+      fileContext,
     )) {
       if (!responses.has(helperResponse.statusCode)) {
         responses.set(helperResponse.statusCode, helperResponse);
@@ -123,6 +126,7 @@ export async function extractLaravelResponses(
     methodBody,
     classIndex,
     exampleContext,
+    fileContext,
   );
   for (const response of resourceResponses) {
     if (!responses.has(response.statusCode)) {
@@ -310,6 +314,7 @@ async function extractLaravelHelperResponses(
   controllerContent: string,
   exampleContext: PhpExampleContext,
   depth: number,
+  fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse[]> {
   const responses: NormalizedResponse[] = [];
 
@@ -342,6 +347,7 @@ async function extractLaravelHelperResponses(
         controllerContent,
         createPhpExampleContext(helperMethod.body, seedAssignments),
         depth + 1,
+        fileContext,
       )),
     );
   }

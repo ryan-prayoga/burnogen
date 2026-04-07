@@ -3,15 +3,17 @@ import { promises as fs } from "node:fs";
 import type { NormalizedRequestBody, SchemaObject } from "../../core/model";
 import { parsePhpExampleValue } from "./examples";
 import {
+  type PhpFileContext,
   type PhpClassRecord,
   dedupeStrings,
   parsePhpStringList,
-  shortPhpClassName,
+  resolvePhpClassRecord,
 } from "./shared";
 
 export async function extractLaravelManualRequestSchema(
   methodBody: string,
   classIndex: Map<string, PhpClassRecord>,
+  fileContext?: PhpFileContext,
 ): Promise<SchemaObject | undefined> {
   const properties: Record<string, SchemaObject> = {};
 
@@ -102,7 +104,11 @@ export async function extractLaravelManualRequestSchema(
       continue;
     }
 
-    const enumValues = await parseLaravelEnumValues(enumType, classIndex);
+    const enumValues = await parseLaravelEnumValues(
+      enumType,
+      classIndex,
+      fileContext,
+    );
     properties[fieldName] = mergeSchemaObjects(
       properties[fieldName],
       enumValues.length > 0
@@ -173,8 +179,9 @@ function mergeSchemaObjects(
 async function parseLaravelEnumValues(
   enumType: string,
   classIndex: Map<string, PhpClassRecord>,
+  fileContext?: PhpFileContext,
 ): Promise<Array<string | number>> {
-  const enumRecord = classIndex.get(shortPhpClassName(enumType));
+  const enumRecord = resolvePhpClassRecord(classIndex, enumType, fileContext);
   if (!enumRecord) {
     return [];
   }

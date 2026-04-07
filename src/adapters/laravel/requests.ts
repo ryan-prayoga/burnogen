@@ -21,9 +21,12 @@ import {
 import { extractLaravelResponses } from "./responses";
 import {
   type ControllerAnalysis,
+  parsePhpFileContext,
   type ParsedHandler,
   type PhpClassRecord,
   findPhpMethod,
+  resolvePhpClassRecord,
+  shortPhpClassName,
 } from "./shared";
 
 export async function analyzeControllerHandler(
@@ -46,7 +49,7 @@ export async function analyzeControllerHandler(
     return cached;
   }
 
-  const controllerRecord = classIndex.get(handler.controller);
+  const controllerRecord = resolvePhpClassRecord(classIndex, handler.controller);
   if (!controllerRecord) {
     const warning = {
       code: "LARAVEL_CONTROLLER_NOT_FOUND",
@@ -63,6 +66,7 @@ export async function analyzeControllerHandler(
   }
 
   const content = await fs.readFile(controllerRecord.filePath, "utf8");
+  const fileContext = parsePhpFileContext(content);
   const method = findPhpMethod(content, handler.action);
   if (!method) {
     const warning = {
@@ -88,10 +92,14 @@ export async function analyzeControllerHandler(
   let headerParameters: NormalizedParameter[] = [];
   let responses: NormalizedResponse[] = [];
 
-  if (firstRequestType && firstRequestType !== "Request") {
+  if (
+    firstRequestType &&
+    shortPhpClassName(firstRequestType) !== "Request"
+  ) {
     const requestSchema = await parseFormRequestSchema(
       firstRequestType,
       classIndex,
+      fileContext,
     );
     if (requestSchema) {
       requestBody = {
@@ -113,6 +121,7 @@ export async function analyzeControllerHandler(
     const manualRequestSchema = await extractLaravelManualRequestSchema(
       body,
       classIndex,
+      fileContext,
     );
     if (manualRequestSchema) {
       requestBody = mergeLaravelRequestBodies(requestBody, manualRequestSchema);
@@ -120,7 +129,14 @@ export async function analyzeControllerHandler(
 
     queryParameters = extractLaravelQueryParameters(body);
     headerParameters = extractLaravelHeaderParameters(body);
-    responses = await extractLaravelResponses(body, classIndex, content);
+    responses = await extractLaravelResponses(
+      body,
+      classIndex,
+      content,
+      undefined,
+      0,
+      fileContext,
+    );
   }
 
   const result = {
