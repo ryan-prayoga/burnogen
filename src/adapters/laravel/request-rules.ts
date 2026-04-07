@@ -3,19 +3,22 @@ import { promises as fs } from "node:fs";
 import { extractBalanced, splitTopLevel } from "../../core/parsing";
 import type { SchemaObject } from "../../core/model";
 import {
+  type PhpFileContext,
   type PhpClassRecord,
   extractReturnArray,
   findPhpMethod,
   parsePhpString,
   parsePhpStringList,
+  resolvePhpClassRecord,
   splitOnce,
 } from "./shared";
 
 export async function parseFormRequestSchema(
   requestType: string,
   classIndex: Map<string, PhpClassRecord>,
+  fileContext?: PhpFileContext,
 ): Promise<SchemaObject | undefined> {
-  const requestRecord = classIndex.get(requestType);
+  const requestRecord = resolvePhpClassRecord(classIndex, requestType, fileContext);
   if (!requestRecord) {
     return undefined;
   }

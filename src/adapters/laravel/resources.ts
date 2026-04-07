@@ -10,19 +10,21 @@ import {
   type PhpExampleContext,
 } from "./examples";
 import {
+  type PhpFileContext,
   type LaravelResourceSchema,
   type PhpClassRecord,
   extractDirectReturnArrays,
   extractReturnArray,
   extractReturnStatements,
   findPhpMethod,
-  shortPhpClassName,
+  resolvePhpClassRecord,
 } from "./shared";
 
 export async function extractLaravelResourceResponses(
   methodBody: string,
   classIndex: Map<string, PhpClassRecord>,
   exampleContext: PhpExampleContext,
+  fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse[]> {
   const responses: NormalizedResponse[] = [];
   const returnStatements = extractReturnStatements(methodBody);
@@ -41,6 +43,7 @@ export async function extractLaravelResourceResponses(
       parsedResourceReturn.mode,
       classIndex,
       parsedResourceReturn.additional,
+      fileContext,
     );
     if (resourceResponse) {
       responses.push(resourceResponse);
@@ -55,10 +58,12 @@ async function buildLaravelResourceResponse(
   mode: "single" | "collection",
   classIndex: Map<string, PhpClassRecord>,
   additional?: unknown,
+  fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse | undefined> {
   const resourceSchema = await parseLaravelResourceSchema(
     resourceType,
     classIndex,
+    fileContext,
   );
   if (!resourceSchema) {
     return undefined;
@@ -107,8 +112,13 @@ async function buildLaravelResourceResponse(
 async function parseLaravelResourceSchema(
   resourceType: string,
   classIndex: Map<string, PhpClassRecord>,
+  fileContext?: PhpFileContext,
 ): Promise<LaravelResourceSchema | undefined> {
-  const resourceRecord = classIndex.get(shortPhpClassName(resourceType));
+  const resourceRecord = resolvePhpClassRecord(
+    classIndex,
+    resourceType,
+    fileContext,
+  );
   if (!resourceRecord) {
     return undefined;
   }

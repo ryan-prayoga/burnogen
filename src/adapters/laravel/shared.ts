@@ -12,6 +12,7 @@ import type {
 
 export interface PhpClassRecord {
   shortName: string;
+  fullName: string;
   filePath: string;
 }
 
@@ -37,6 +38,11 @@ export interface LaravelResourceSchema {
 export interface ParsedHandler {
   controller?: string;
   action?: string;
+}
+
+export interface PhpFileContext {
+  namespace?: string;
+  imports: Map<string, string>;
 }
 
 export function extractReturnArray(methodBody: string): string | null {
@@ -173,7 +179,7 @@ export function buildOperationId(
   handler?: ParsedHandler,
 ): string {
   if (handler?.controller && handler.action) {
-    return `${camelCase(handler.controller)}${capitalize(handler.action)}`;
+    return `${camelCase(shortPhpClassName(handler.controller))}${capitalize(handler.action)}`;
   }
 
   const cleanPath = pathname
@@ -191,7 +197,7 @@ export function buildSummary(
   handler?: ParsedHandler,
 ): string {
   if (handler?.action && handler.controller) {
-    return `${handler.controller}::${handler.action}`;
+    return `${shortPhpClassName(handler.controller)}::${handler.action}`;
   }
 
   return `${method.toUpperCase()} ${pathname}`;
@@ -199,7 +205,7 @@ export function buildSummary(
 
 export function inferTag(pathname: string, controller?: string): string {
   if (controller) {
-    return controller.replace(/Controller$/, "");
+    return shortPhpClassName(controller).replace(/Controller$/, "");
   }
 
   return pathname.split("/").filter(Boolean)[0] ?? "default";
@@ -256,8 +262,88 @@ export function collectLaravelRouteStatement(
   return { value, lastLine, braceDelta };
 }
 
+export function parsePhpFileContext(content: string): PhpFileContext {
+  return {
+    namespace: parsePhpNamespace(content),
+    imports: parsePhpUseImports(content),
+  };
+}
+
+export function parsePhpNamespace(content: string): string | undefined {
+  return content.match(/^\s*namespace\s+([^;]+);/m)?.[1]?.trim();
+}
+
+export function parsePhpUseImports(content: string): Map<string, string> {
+  const imports = new Map<string, string>();
+
+  for (const match of content.matchAll(/^\s*use\s+(?!function\b|const\b)([^;]+);/gm)) {
+    const rawStatement = match[1]?.trim();
+    if (!rawStatement || rawStatement.includes("{")) {
+      continue;
+    }
+
+    for (const part of rawStatement.split(",")) {
+      const trimmed = part.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      const importMatch = trimmed.match(
+        /^([A-Za-z0-9_\\]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/i,
+      );
+      if (!importMatch?.[1]) {
+        continue;
+      }
+
+      const fullName = normalizePhpClassName(importMatch[1]);
+      const alias = importMatch[2] ?? shortPhpClassName(fullName);
+      imports.set(alias, fullName);
+    }
+  }
+
+  return imports;
+}
+
+export function resolvePhpClassName(
+  input: string,
+  fileContext?: PhpFileContext,
+): string {
+  const normalized = normalizePhpClassName(input);
+  if (!normalized) {
+    return normalized;
+  }
+
+  if (normalized.includes("\\")) {
+    return normalized;
+  }
+
+  const imported = fileContext?.imports.get(normalized);
+  if (imported) {
+    return imported;
+  }
+
+  if (fileContext?.namespace) {
+    return `${fileContext.namespace}\\${normalized}`;
+  }
+
+  return normalized;
+}
+
+export function resolvePhpClassRecord(
+  classIndex: Map<string, PhpClassRecord>,
+  input: string,
+  fileContext?: PhpFileContext,
+): PhpClassRecord | undefined {
+  const resolvedName = resolvePhpClassName(input, fileContext);
+  return classIndex.get(resolvedName) ?? classIndex.get(shortPhpClassName(resolvedName));
+}
+
+export function normalizePhpClassName(input: string): string {
+  return input.trim().replace(/^\\+/, "").replace(/::class$/, "");
+}
+
 export function shortPhpClassName(input: string): string {
-  const cleaned = input.trim().replace(/::class$/, "");
+  const cleaned = normalizePhpClassName(input);
   const parts = cleaned.split("\\");
   return parts[parts.length - 1];
 }

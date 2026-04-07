@@ -1,0 +1,6 @@
+{
+  "name": "acme/laravel-namespaced-groups",
+  "require": {
+    "laravel/framework": "^11.0"
+  }
+}

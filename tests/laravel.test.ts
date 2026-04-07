@@ -159,4 +159,83 @@ describe("Laravel adapter", () => {
       }),
     );
   });
+
+  it("resolves namespaced Laravel controller groups with duplicate short class names", async () => {
+    const artifacts = await generateArtifacts(
+      fixturePath("laravel-namespaced-groups"),
+      defaultConfig(),
+    );
+
+    expect(artifacts.normalized.endpoints).toHaveLength(5);
+
+    const apiUsers = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/users" && endpoint.method === "get",
+    );
+    expect(apiUsers?.auth.type).toBe("bearer");
+    const apiUsersSuccess = apiUsers?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(
+      apiUsersSuccess?.schema?.properties?.data?.items?.properties?.email?.type,
+    ).toBe("string");
+    expect(
+      apiUsersSuccess?.schema?.properties?.data?.items?.properties?.role?.type,
+    ).toBe("string");
+
+    const apiStoreUser = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/users" && endpoint.method === "post",
+    );
+    expect(apiStoreUser?.requestBody?.schema.properties?.email?.format).toBe("email");
+    expect(apiStoreUser?.requestBody?.schema.properties?.role?.enum).toEqual([
+      "member",
+      "owner",
+    ]);
+    const apiStoreUserSuccess = apiStoreUser?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(
+      apiStoreUserSuccess?.schema?.properties?.data?.properties?.email?.type,
+    ).toBe("string");
+    expect(apiStoreUserSuccess?.example).toEqual(
+      expect.objectContaining({
+        meta: {
+          source: "api",
+        },
+      }),
+    );
+
+    const adminStoreUser = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/admin/users" && endpoint.method === "post",
+    );
+    expect(
+      adminStoreUser?.requestBody?.schema.properties?.permissions?.type,
+    ).toBe("array");
+    expect(adminStoreUser?.requestBody?.schema.properties?.role?.enum).toEqual([
+      "super-admin",
+      "auditor",
+    ]);
+    const adminStoreUserSuccess = adminStoreUser?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(
+      adminStoreUserSuccess?.schema?.properties?.data?.properties?.permissions
+        ?.type,
+    ).toBe("string");
+    expect(
+      adminStoreUserSuccess?.schema?.properties?.data?.properties?.email,
+    ).toBeUndefined();
+
+    const status = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/status" && endpoint.method === "get",
+    );
+    expect(status?.auth.type).toBe("bearer");
+    expect(status?.parameters).toContainEqual(
+      expect.objectContaining({
+        name: "X-Trace-Id",
+        in: "header",
+      }),
+    );
+    expect(artifacts.warnings).toEqual([]);
+  });
 });

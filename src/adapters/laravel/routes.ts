@@ -14,6 +14,7 @@ import { analyzeControllerHandler } from "./requests";
 import {
   type ControllerAnalysis,
   type GroupContext,
+  type PhpFileContext,
   type ParsedHandler,
   type PhpClassRecord,
   buildDefaultResponses,
@@ -28,7 +29,8 @@ import {
   normalizeLaravelPath,
   parsePhpString,
   parsePhpStringList,
-  shortPhpClassName,
+  parsePhpFileContext,
+  resolvePhpClassName,
   singularize,
 } from "./shared";
 
@@ -68,10 +70,11 @@ async function buildPhpClassIndex(
     (filePath) => filePath.endsWith(".php"),
     { ignoreDirectories: ["vendor", "node_modules", ".git"] },
   );
-  const classIndex = new Map<string, PhpClassRecord>();
+  const records: PhpClassRecord[] = [];
 
   for (const filePath of phpFiles) {
     const content = await fs.readFile(filePath, "utf8");
+    const namespace = parsePhpFileContext(content).namespace;
     const classMatch = content.match(
       /\b(?:class|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\b/,
     );
@@ -79,10 +82,29 @@ async function buildPhpClassIndex(
       continue;
     }
 
-    classIndex.set(classMatch[1], {
+    const shortName = classMatch[1];
+    const fullName = namespace ? `${namespace}\\${shortName}` : shortName;
+    records.push({
       shortName: classMatch[1],
+      fullName,
       filePath,
     });
+  }
+
+  const classIndex = new Map<string, PhpClassRecord>();
+  const recordsByShortName = new Map<string, PhpClassRecord[]>();
+
+  for (const record of records) {
+    classIndex.set(record.fullName, record);
+    const matchingRecords = recordsByShortName.get(record.shortName) ?? [];
+    matchingRecords.push(record);
+    recordsByShortName.set(record.shortName, matchingRecords);
+  }
+
+  for (const [shortName, matchingRecords] of recordsByShortName) {
+    if (matchingRecords.length === 1) {
+      classIndex.set(shortName, matchingRecords[0]);
+    }
   }
 
   return classIndex;
@@ -99,6 +121,7 @@ async function parseRoutesFromFile(
   const endpoints: NormalizedEndpoint[] = [];
   const warnings: GenerationWarning[] = [];
   const groupStack: Array<{ context: GroupContext; depth: number }> = [];
+  const fileContext = parsePhpFileContext(content);
 
   let braceDepth = 0;
 
@@ -124,7 +147,7 @@ async function parseRoutesFromFile(
 
     if (statement.value.includes("->group(function")) {
       groupStack.push({
-        context: parseGroupContext(statement.value),
+        context: parseGroupContext(statement.value, fileContext),
         depth: braceDepth + 1,
       });
       braceDepth += statement.braceDelta;
@@ -144,6 +167,7 @@ async function parseRoutesFromFile(
         classIndex,
         controllerCache,
         config,
+        fileContext,
       );
       endpoints.push(...resourceRoutes.endpoints);
       warnings.push(...resourceRoutes.warnings);
@@ -160,6 +184,7 @@ async function parseRoutesFromFile(
       classIndex,
       controllerCache,
       config,
+      fileContext,
     );
     if (parsedRoute.endpoint) {
       endpoints.push(parsedRoute.endpoint);
@@ -179,7 +204,10 @@ async function parseRoutesFromFile(
   return { endpoints, warnings };
 }
 
-function parseGroupContext(statement: string): GroupContext {
+function parseGroupContext(
+  statement: string,
+  fileContext: PhpFileContext,
+): GroupContext {
   const prefixes: string[] = [];
   const middleware: string[] = [];
   let controller: string | undefined;
@@ -197,7 +225,7 @@ function parseGroupContext(statement: string): GroupContext {
     }
 
     if (chain.name === "controller") {
-      controller = shortPhpClassName(chain.value);
+      controller = resolvePhpClassName(chain.value, fileContext);
     }
   }
 
@@ -212,6 +240,7 @@ async function parseConcreteRoute(
   classIndex: Map<string, PhpClassRecord>,
   controllerCache: Map<string, ControllerAnalysis>,
   config: BrunogenConfig,
+  fileContext: PhpFileContext,
 ): Promise<{ endpoint?: NormalizedEndpoint; warnings: GenerationWarning[] }> {
   const routeMatch = statement.match(
     /Route::(get|post|put|patch|delete|head|options)\s*\(\s*(['"])(.*?)\2\s*,\s*([\s\S]+?)\)\s*([\s\S]*);?$/,
@@ -233,9 +262,9 @@ async function parseConcreteRoute(
   const rawPath = routeMatch[3];
   const handlerText = routeMatch[4];
   const routeChain = routeMatch[5] ?? "";
-  const routeContext = parseGroupContext(`Route::${routeChain}`);
+  const routeContext = parseGroupContext(`Route::${routeChain}`, fileContext);
   const context = mergeGroupContexts([inheritedContext, routeContext]);
-  const handler = parseHandler(handlerText, context.controller);
+  const handler = parseHandler(handlerText, context.controller, fileContext);
   const analysis = await analyzeControllerHandler(
     handler,
     classIndex,
@@ -297,6 +326,7 @@ async function parseResourceRoute(
   classIndex: Map<string, PhpClassRecord>,
   controllerCache: Map<string, ControllerAnalysis>,
   config: BrunogenConfig,
+  fileContext: PhpFileContext,
 ): Promise<{ endpoints: NormalizedEndpoint[]; warnings: GenerationWarning[] }> {
   const match = statement.match(
     /Route::(?:apiResource|resource)\s*\(\s*(['"])(.*?)\1\s*,\s*([A-Za-z0-9_\\]+)::class\s*\)([\s\S]*);?$/,
@@ -316,9 +346,9 @@ async function parseResourceRoute(
   }
 
   const rawPath = match[2];
-  const controller = shortPhpClassName(match[3]);
+  const controller = resolvePhpClassName(match[3], fileContext);
   const chain = match[4] ?? "";
-  const resourceContext = parseGroupContext(`Route::${chain}`);
+  const resourceContext = parseGroupContext(`Route::${chain}`, fileContext);
   const context = mergeGroupContexts([
     inheritedContext,
     resourceContext,
@@ -420,13 +450,14 @@ function parseResourceScope(
 function parseHandler(
   handlerText: string,
   fallbackController?: string,
+  fileContext?: PhpFileContext,
 ): ParsedHandler | undefined {
   const controllerArray = handlerText.match(
     /\[\s*([A-Za-z0-9_\\]+)::class\s*,\s*['"]([A-Za-z0-9_]+)['"]\s*\]/,
   );
   if (controllerArray?.[1] && controllerArray[2]) {
     return {
-      controller: shortPhpClassName(controllerArray[1]),
+      controller: resolveControllerName(controllerArray[1], fileContext),
       action: controllerArray[2],
     };
   }
@@ -434,7 +465,7 @@ function parseHandler(
   const invokedController = handlerText.match(/([A-Za-z0-9_\\]+)::class/);
   if (invokedController?.[1]) {
     return {
-      controller: shortPhpClassName(invokedController[1]),
+      controller: resolveControllerName(invokedController[1], fileContext),
       action: "__invoke",
     };
   }
@@ -448,6 +479,13 @@ function parseHandler(
   }
 
   return undefined;
+}
+
+function resolveControllerName(
+  input: string,
+  fileContext?: PhpFileContext,
+): string {
+  return resolvePhpClassName(input, fileContext);
 }
 
 function countBraceDelta(input: string): number {
