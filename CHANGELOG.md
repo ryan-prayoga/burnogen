@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v0.4.5
+
+_Released: 2026-04-07_
+
+- Add a more realistic Laravel regression fixture with namespaced controller groups, invokable routes, and duplicate short class names
+- Resolve Laravel controller, FormRequest, resource, and enum classes through namespace/import-aware lookup with unique short-name fallback
+- Improve Laravel resource and JSON response example inference so namespaced fixture output stays concrete instead of collapsing to generic placeholders
+- Disambiguate normalized Laravel `operationId`, tags, and summaries for namespaced controllers before OpenAPI generation
+
 ## v0.4.4
 
 _Released: 2026-04-07_
