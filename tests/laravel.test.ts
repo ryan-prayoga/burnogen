@@ -95,8 +95,8 @@ describe("Laravel adapter", () => {
     expect(resourceShowSuccess?.example).toEqual({
       data: {
         id: 1,
-        name: "Jane Doe",
-        owner_email: "user@example.com",
+        name: "Launchpad",
+        owner_email: "owner@example.com",
       },
       meta: {
         trace_id: "trace_123",
@@ -172,15 +172,21 @@ describe("Laravel adapter", () => {
       (endpoint) => endpoint.path === "/api/users" && endpoint.method === "get",
     );
     expect(apiUsers?.auth.type).toBe("bearer");
-    const apiUsersSuccess = apiUsers?.responses.find(
-      (response) => response.statusCode === "200",
+    expect(apiUsers?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          data: [
+            {
+              id: 1,
+              name: "API Jane",
+              email: "api@example.com",
+              role: "member",
+            },
+          ],
+        },
+      }),
     );
-    expect(
-      apiUsersSuccess?.schema?.properties?.data?.items?.properties?.email?.type,
-    ).toBe("string");
-    expect(
-      apiUsersSuccess?.schema?.properties?.data?.items?.properties?.role?.type,
-    ).toBe("string");
 
     const apiStoreUser = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/users" && endpoint.method === "post",
@@ -190,16 +196,19 @@ describe("Laravel adapter", () => {
       "member",
       "owner",
     ]);
-    const apiStoreUserSuccess = apiStoreUser?.responses.find(
-      (response) => response.statusCode === "200",
-    );
-    expect(
-      apiStoreUserSuccess?.schema?.properties?.data?.properties?.email?.type,
-    ).toBe("string");
-    expect(apiStoreUserSuccess?.example).toEqual(
+    expect(apiStoreUser?.responses).toContainEqual(
       expect.objectContaining({
-        meta: {
-          source: "api",
+        statusCode: "200",
+        example: {
+          data: {
+            id: 2,
+            name: "API Owner",
+            email: "owner@example.com",
+            role: "owner",
+          },
+          meta: {
+            source: "api",
+          },
         },
       }),
     );
@@ -215,16 +224,18 @@ describe("Laravel adapter", () => {
       "super-admin",
       "auditor",
     ]);
-    const adminStoreUserSuccess = adminStoreUser?.responses.find(
-      (response) => response.statusCode === "200",
+    expect(adminStoreUser?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          data: {
+            id: 100,
+            name: "Security Admin",
+            permissions: ["manage-users", "audit-logs"],
+          },
+        },
+      }),
     );
-    expect(
-      adminStoreUserSuccess?.schema?.properties?.data?.properties?.permissions
-        ?.type,
-    ).toBe("string");
-    expect(
-      adminStoreUserSuccess?.schema?.properties?.data?.properties?.email,
-    ).toBeUndefined();
 
     const status = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/status" && endpoint.method === "get",
@@ -234,6 +245,15 @@ describe("Laravel adapter", () => {
       expect.objectContaining({
         name: "X-Trace-Id",
         in: "header",
+      }),
+    );
+    expect(status?.responses).toContainEqual(
+      expect.objectContaining({
+        statusCode: "200",
+        example: {
+          ok: true,
+          trace_id: "trace_123",
+        },
       }),
     );
     expect(artifacts.warnings).toEqual([]);

@@ -43,6 +43,7 @@ export async function extractLaravelResourceResponses(
       parsedResourceReturn.mode,
       classIndex,
       parsedResourceReturn.additional,
+      parsedResourceReturn.payload,
       fileContext,
     );
     if (resourceResponse) {
@@ -58,11 +59,13 @@ async function buildLaravelResourceResponse(
   mode: "single" | "collection",
   classIndex: Map<string, PhpClassRecord>,
   additional?: unknown,
+  payload?: unknown,
   fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse | undefined> {
   const resourceSchema = await parseLaravelResourceSchema(
     resourceType,
     classIndex,
+    payload,
     fileContext,
   );
   if (!resourceSchema) {
@@ -112,6 +115,7 @@ async function buildLaravelResourceResponse(
 async function parseLaravelResourceSchema(
   resourceType: string,
   classIndex: Map<string, PhpClassRecord>,
+  payload?: unknown,
   fileContext?: PhpFileContext,
 ): Promise<LaravelResourceSchema | undefined> {
   const resourceRecord = resolvePhpClassRecord(
@@ -138,7 +142,7 @@ async function parseLaravelResourceSchema(
 
   const example = parsePhpExampleValue(
     arrayLiteral,
-    createPhpExampleContext(toArrayMethod.body),
+    createPhpExampleContext(toArrayMethod.body, undefined, extractResourceSelfExample(payload)),
   );
   return {
     schema: inferSchemaFromExample(example),
@@ -154,6 +158,7 @@ function parseLaravelResourceReturnStatement(
       resourceType: string;
       mode: "single" | "collection";
       additional?: unknown;
+      payload?: unknown;
     }
   | undefined {
   const newResourceMatch = statement.match(
@@ -164,6 +169,7 @@ function parseLaravelResourceReturnStatement(
       resourceType: newResourceMatch[1],
       mode: "single",
       additional: extractLaravelResourceAdditional(statement, exampleContext),
+      payload: extractLaravelResourcePayload(statement, exampleContext),
     };
   }
 
@@ -175,6 +181,7 @@ function parseLaravelResourceReturnStatement(
       resourceType: factoryMatch[1],
       mode: factoryMatch[2] === "collection" ? "collection" : "single",
       additional: extractLaravelResourceAdditional(statement, exampleContext),
+      payload: extractLaravelResourcePayload(statement, exampleContext),
     };
   }
 
@@ -213,4 +220,45 @@ function extractLaravelResourceAdditional(
     !Array.isArray(additional)
     ? additional
     : undefined;
+}
+
+function extractLaravelResourcePayload(
+  statement: string,
+  exampleContext: PhpExampleContext,
+): unknown | undefined {
+  const resourceIndex = statement.search(
+    /return\s+(?:new\s+[A-Za-z0-9_\\]+|[A-Za-z0-9_\\]+::(?:make|collection))\s*\(/,
+  );
+  if (resourceIndex < 0) {
+    return undefined;
+  }
+
+  const openParenIndex = statement.indexOf("(", resourceIndex);
+  const argsBlock =
+    openParenIndex >= 0
+      ? extractBalanced(statement, openParenIndex, "(", ")")
+      : null;
+  if (!argsBlock) {
+    return undefined;
+  }
+
+  const firstArg = splitTopLevel(argsBlock.slice(1, -1), ",")[0]?.trim();
+  return firstArg ? parsePhpExampleValue(firstArg, exampleContext) : undefined;
+}
+
+function extractResourceSelfExample(
+  payload: unknown,
+): Record<string, unknown> | undefined {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+
+  if (Array.isArray(payload)) {
+    const firstItem = payload.find(
+      (item) => item && typeof item === "object" && !Array.isArray(item),
+    );
+    return firstItem as Record<string, unknown> | undefined;
+  }
+
+  return undefined;
 }
