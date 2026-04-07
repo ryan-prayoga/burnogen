@@ -57,4 +57,32 @@ describe("Generation pipeline", () => {
       await fs.rm(workspace, { recursive: true, force: true });
     }
   });
+
+  it("supports the experimental Express AST pipeline with a relative project root", async () => {
+    const previousAstFlag = process.env.BRUNOGEN_EXPERIMENTAL_EXPRESS_AST;
+    process.env.BRUNOGEN_EXPERIMENTAL_EXPRESS_AST = "1";
+
+    try {
+      const relativeRoot = path.relative(process.cwd(), fixturePath("express"));
+      const artifacts = await generateArtifacts(relativeRoot, defaultConfig());
+
+      expect(artifacts.normalized.framework).toBe("express");
+      expect(artifacts.normalized.endpoints).toContainEqual(expect.objectContaining({
+        method: "post",
+        path: "/api/v1/users",
+        operationId: "createUser",
+      }));
+      expect(artifacts.normalized.endpoints).toContainEqual(expect.objectContaining({
+        method: "post",
+        path: "/api/v1/users/impersonate",
+        operationId: "impersonateUser",
+      }));
+    } finally {
+      if (previousAstFlag === undefined) {
+        delete process.env.BRUNOGEN_EXPERIMENTAL_EXPRESS_AST;
+      } else {
+        process.env.BRUNOGEN_EXPERIMENTAL_EXPRESS_AST = previousAstFlag;
+      }
+    }
+  });
 });
