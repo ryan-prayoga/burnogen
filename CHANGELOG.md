@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## v0.4.6
+
+_Released: 2026-04-07_
+
+- Improve Go adapter parsing for multi-line route, group, and middleware registration statements across Gin, Fiber, and Echo
+- Preserve Fiber status-chain response inference for multi-line `.Status(...).JSON(...)` calls instead of falling back to default responses
+- Refresh the checked-in Go demo snapshot to remove the spurious empty `200` response example for `POST /api/users`
+
 ## v0.4.5
 
 _Released: 2026-04-07_
