@@ -138,15 +138,24 @@ async function scanProject(
     case "fiber":
     case "echo":
       return scanGoProject(root, framework, projectName, projectVersion, config);
-    case "express":
-      // Phase 2: AST-first with regex fallback
-      try {
-        return await scanExpressProjectAst(root, projectName, projectVersion, config);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(`[brunogen] AST scan failed: ${msg} — falling back to regex parser\n`);
-        return scanExpressProject(root, projectName, projectVersion, config);
+    case "express": {
+      if (process.env.BRUNOGEN_EXPERIMENTAL_EXPRESS_AST === "1") {
+        try {
+          return await scanExpressProjectAst(
+            root,
+            projectName,
+            projectVersion,
+            config,
+          );
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[brunogen] AST scan failed: ${msg} — falling back to regex parser\n`,
+          );
+        }
       }
+      return scanExpressProject(root, projectName, projectVersion, config);
+    }
     default:
       throw new Error(`Unsupported framework: ${framework satisfies never}`);
   }

@@ -198,9 +198,14 @@ function parseImportsAst(
 
         if (decl.id?.type === "ObjectPattern") {
           for (const prop of decl.id.properties ?? []) {
-            const name = getPropertyName(prop.key) ?? prop.value?.name;
+            const importedName = getPropertyName(prop.key);
+            const name = importedName ?? prop.value?.name;
             if (name) {
-              bindings.set(name, { kind: "named", sourceFile });
+              bindings.set(name, {
+                kind: "named",
+                sourceFile,
+                importedName: importedName ?? undefined,
+              });
             }
           }
         } else if (decl.id?.type === "Identifier") {
@@ -352,53 +357,44 @@ function parseRoutersAst(
 
       if (propName === "use") {
         const args = node.arguments ?? [];
-        const mountPathArg = args.length > 0 ? getStringValue(args[0]) : "";
-        if (mountPathArg === null) continue; // First arg must be a string path
-
-        // The mounted target (the router being mounted)
-        const targetName = args.length > 1 ? getTargetName(args[1]) : null;
-        if (!targetName) continue;
-
-        // Resolve the import to get source file and exported name
-        const imp = fileImports.get(targetName);
-        const mountSourceFile = imp?.sourceFile;
-        const exportedName = imp?.importedName ?? targetName;
-
-        const targetKey = mountSourceFile
-          ? `${mountSourceFile}#${exportedName}`
-          : `${file.filePath}#${targetName}`;
-
-        // Add mount info to the SOURCE router (the one calling .use())
-        for (const router of routers) {
-          if (router.filePath === file.filePath && router.name === objName) {
-            router.mounts.push({
-              line: getLoc(node).line ?? 1,
-              path: mountPathArg,
-              middleware: [],
-              routerKey: targetKey,
-            });
-            break;
-          }
-        }
-
-        // Also create a proxy entry so the target router is discoverable
-        // (if it hasn't been added already from its own file parsing)
-        const alreadyExists = routers.some(
-          (r) =>
-            r.filePath === (mountSourceFile ?? file.filePath) &&
-            r.name === exportedName,
+        const sourceRouter = routers.find(
+          (router) => router.filePath === file.filePath && router.name === objName,
         );
-        if (!alreadyExists) {
-          routers.push({
-            key: targetKey,
-            filePath: mountSourceFile ?? file.filePath,
-            name: exportedName,
-            kind: "router",
-            routes: [],
-            mounts: [],
-            middleware: [],
-          });
+        if (!sourceRouter) continue;
+
+        const firstArgIsPath = getStringValue(args[0]) !== null;
+        const mountPath = firstArgIsPath ? getStringValue(args[0]) ?? "" : "";
+        const remainingArgs = args.slice(firstArgIsPath ? 1 : 0);
+        if (remainingArgs.length === 0) continue;
+
+        const mountTargetArg = remainingArgs.at(-1);
+        const targetKey = resolveRouterReference(
+          mountTargetArg,
+          file.filePath,
+          routers,
+          fileImports,
+          exports,
+        );
+
+        if (!targetKey) {
+          for (const middlewareArg of remainingArgs) {
+            const middlewareName = getTargetName(middlewareArg);
+            if (middlewareName) {
+              sourceRouter.middleware.push(middlewareName);
+            }
+          }
+          continue;
         }
+
+        const middlewareArgs = remainingArgs.slice(0, -1);
+        sourceRouter.mounts.push({
+          line: getLoc(node).line ?? 1,
+          path: mountPath,
+          middleware: middlewareArgs
+            .map((arg: any) => getTargetName(arg))
+            .filter((value: string | null): value is string => Boolean(value)),
+          routerKey: targetKey,
+        });
       }
     }
   }
@@ -885,7 +881,88 @@ function parseFunctionsAst(file: ExpressFile): Map<string, FunctionRecord> {
     }
   }
 
+  for (const node of walkAst(file.ast)) {
+    if (node.type !== "AssignmentExpression") {
+      continue;
+    }
+
+    const left = node.left;
+    const right = node.right;
+    if (
+      !left ||
+      left.type !== "MemberExpression" ||
+      (right?.type !== "ArrowFunctionExpression" &&
+        right?.type !== "FunctionExpression")
+    ) {
+      continue;
+    }
+
+    const owner = getTargetName(left.object);
+    const name = getPropertyName(left.property);
+    if (
+      !name ||
+      (owner !== "exports" && owner !== "module.exports")
+    ) {
+      continue;
+    }
+
+    const bodyRange = right.body?.range;
+    let body = "";
+    if (bodyRange && file.content) {
+      body = file.content
+        .slice(
+          bodyRange[0] + (right.body.type === "BlockStatement" ? 1 : 0),
+          bodyRange[1] - (right.body.type === "BlockStatement" ? 1 : 0),
+        )
+        .trim();
+    }
+
+    functions.set(name, {
+      name,
+      filePath: file.filePath,
+      line: getLoc(node).line ?? 1,
+      params: (right.params ?? []).map(extractParamName).filter(Boolean),
+      body,
+    });
+  }
+
   return functions;
+}
+
+function resolveRouterReference(
+  node: any,
+  filePath: string,
+  routers: RouterRecord[],
+  fileImports: Map<string, ImportBinding>,
+  exportsMap: Map<string, FileExports>,
+): string | null {
+  const targetName = getTargetName(node);
+  if (!targetName) {
+    return null;
+  }
+
+  const localRouter = routers.find(
+    (router) => router.filePath === filePath && router.name === targetName,
+  );
+  if (localRouter) {
+    return localRouter.key;
+  }
+
+  const importBinding = fileImports.get(targetName);
+  if (!importBinding?.sourceFile) {
+    return null;
+  }
+
+  const sourceExports = exportsMap.get(importBinding.sourceFile);
+  const exportedName =
+    importBinding.kind === "default"
+      ? sourceExports?.defaultExpression
+      : importBinding.importedName ?? targetName;
+  if (!exportedName) {
+    return null;
+  }
+
+  return `${importBinding.sourceFile}#${exportedName}`;
 }
 
 // ─── Module resolution ─────────────────────────────────────────
@@ -1055,7 +1132,14 @@ function buildSummary(method: string, path: string, handlerName?: string): strin
 }
 
 function normalizePath(p: string): string {
-  return "/" + p.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "/");
+  return (
+    "/" +
+    p
+      .replace(/^\/+|\/+$/g, "")
+      .replace(/\/+/g, "/")
+      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
+      .replace(/\*([A-Za-z_][A-Za-z0-9_]*)/g, "{$1}")
+  );
 }
 
 function joinPath(...parts: string[]): string {
@@ -1245,9 +1329,9 @@ function collectRouterEndpointsAst(ctx: CollectContext): void {
 
 function extractPathParams(routePath: string): NormalizedParameter[] {
   const params: NormalizedParameter[] = [];
-  for (const match of routePath.matchAll(/:([^/]+)/g)) {
+  for (const match of routePath.matchAll(/\{([^}]+)\}|:([^/]+)/g)) {
     params.push({
-      name: match[1],
+      name: match[1] ?? match[2],
       in: "path",
       required: true,
       schema: { type: "string" },
