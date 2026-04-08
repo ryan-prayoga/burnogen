@@ -239,6 +239,87 @@ describe("Laravel adapter", () => {
     );
   });
 
+  it("infers simple and cursor paginator resource envelopes", async () => {
+    const artifacts = await generateArtifacts(
+      fixturePath("laravel-pagination-modes"),
+      defaultConfig(),
+    );
+
+    expect(artifacts.normalized.framework).toBe("laravel");
+    expect(artifacts.normalized.endpoints).toHaveLength(2);
+
+    const simple = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
+    );
+    const simpleSuccess = simple?.responses.find((response) => response.statusCode === "200");
+    expect(simple?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(simpleSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(simpleSuccess?.schema?.properties?.links?.properties?.prev).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(simpleSuccess?.schema?.properties?.links?.properties?.next).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(simpleSuccess?.example).toEqual({
+      data: [
+        {
+          id: 1,
+          name: "Jane Doe",
+          owner_email: "user@example.com",
+        },
+      ],
+      meta: {
+        current_page: 1,
+        from: 1,
+        per_page: 10,
+        to: 1,
+      },
+      links: {
+        prev: null,
+        next: "?page=2",
+      },
+    });
+
+    const cursor = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/projects/cursor" && endpoint.method === "get",
+    );
+    const cursorSuccess = cursor?.responses.find((response) => response.statusCode === "200");
+    expect(cursor?.parameters).toContainEqual(expect.objectContaining({
+      name: "cursor",
+      in: "query",
+    }));
+    expect(cursorSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(cursorSuccess?.schema?.properties?.links?.properties?.prev).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(cursorSuccess?.schema?.properties?.links?.properties?.next).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(cursorSuccess?.example).toEqual({
+      data: [
+        {
+          id: 1,
+          name: "Jane Doe",
+          owner_email: "user@example.com",
+        },
+      ],
+      meta: {
+        per_page: 5,
+      },
+      links: {
+        prev: "?cursor=prev_cursor",
+        next: "?cursor=next_cursor",
+      },
+    });
+  });
+
   it("resolves namespaced Laravel controller groups with duplicate short class names", async () => {
     const artifacts = await generateArtifacts(
       fixturePath("laravel-namespaced-groups"),

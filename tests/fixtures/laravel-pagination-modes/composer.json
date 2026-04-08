@@ -1,0 +1,6 @@
+{
+  "name": "example/laravel-pagination-modes",
+  "require": {
+    "laravel/framework": "^12.0"
+  }
+}

@@ -372,6 +372,8 @@ function inferLaravelPaginatorCollection(
         additional: buildCursorPaginationExample(
           perPage,
           args[2],
+          args[3],
+          exampleContext,
         ),
         additionalSchema: buildCursorPaginationSchema(),
       };
@@ -504,7 +506,7 @@ function buildSimplePaginationExample(
       prev: currentPage > 1
         ? buildPaginatorLink(pageName, currentPage - 1)
         : null,
-      next: null,
+      next: buildPaginatorLink(pageName, currentPage + 1),
     },
   };
 }
@@ -512,15 +514,20 @@ function buildSimplePaginationExample(
 function buildCursorPaginationExample(
   perPage: number,
   rawCursorName: string | undefined,
+  rawCursorValue: string | undefined,
+  exampleContext: PhpExampleContext,
 ): Record<string, unknown> {
   const cursorName = parsePhpString(rawCursorName ?? "") ?? "cursor";
+  const currentCursor = rawCursorValue
+    ? parsePhpExampleValue(rawCursorValue, exampleContext)
+    : undefined;
 
   return {
     meta: {
       per_page: perPage,
     },
     links: {
-      prev: null,
+      prev: currentCursor ? `?${cursorName}=prev_cursor` : null,
       next: `?${cursorName}=next_cursor`,
     },
   };
