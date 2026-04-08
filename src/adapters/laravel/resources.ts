@@ -100,7 +100,10 @@ async function buildLaravelResourceResponse(
         };
   const wrappedExample =
     mode === "collection"
-      ? { data: [resourceSchema.example], ...(additionalProperties ?? {}) }
+      ? {
+          data: resourceSchema.collectionExample ?? [resourceSchema.example],
+          ...(additionalProperties ?? {}),
+        }
       : { data: resourceSchema.example, ...(additionalProperties ?? {}) };
 
   return {
@@ -144,9 +147,28 @@ async function parseLaravelResourceSchema(
     arrayLiteral,
     createPhpExampleContext(toArrayMethod.body, undefined, extractResourceSelfExample(payload)),
   );
+
+  const collectionExample = Array.isArray(payload)
+    ? payload
+        .filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === "object" && !Array.isArray(item),
+        )
+        .map((item) =>
+          parsePhpExampleValue(
+            arrayLiteral,
+            createPhpExampleContext(toArrayMethod.body, undefined, item),
+          ),
+        )
+    : undefined;
+
   return {
     schema: inferSchemaFromExample(example),
     example,
+    collectionExample:
+      collectionExample && collectionExample.length > 0
+        ? collectionExample
+        : undefined,
   };
 }
 

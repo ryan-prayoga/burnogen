@@ -195,10 +195,11 @@ Generated from the Laravel fixture:
     session/
       sessioncontrollercheck.bru
       sessioncontrollerstore.bru
+    project/
+      projectcontrollerindex.bru
+      projectcontrollershow.bru
     user/
       usercontrollerindex.bru
-      usercontrollerindexgetapiprojects.bru
-      usercontrollershow.bru
       usercontrollerstore.bru
 ```
 
@@ -206,6 +207,7 @@ The same snapshot is also checked into:
 
 - [output-tree.txt](demo/laravel-happy-path/output-tree.txt)
 - [openapi-snippet.yaml](demo/laravel-happy-path/openapi-snippet.yaml)
+- [projectcontrollerindex.bru](demo/laravel-happy-path/bruno/project/projectcontrollerindex.bru)
 - [sessioncontrollercheck.bru](demo/laravel-happy-path/bruno/session/sessioncontrollercheck.bru)
 - [usercontrollerstore.bru](demo/laravel-happy-path/bruno/user/usercontrollerstore.bru)
 

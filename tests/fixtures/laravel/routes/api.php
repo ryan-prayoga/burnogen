@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\SessionController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
@@ -13,5 +14,5 @@ Route::prefix('api')->group(function () {
         Route::post('/users', [UserController::class, 'store']);
     });
 
-    Route::apiResource('projects', UserController::class)->only(['index', 'show']);
+    Route::apiResource('projects', ProjectController::class)->only(['index', 'show']);
 });

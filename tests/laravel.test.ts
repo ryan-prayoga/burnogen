@@ -118,11 +118,48 @@ describe("Laravel adapter", () => {
       },
     });
 
+    const listProjects = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/projects" && endpoint.method === "get");
+    const listProjectsSuccess = listProjects?.responses.find((response) => response.statusCode === "200");
+    expect(listProjects?.tags).toEqual(["Project"]);
+    expect(listProjects?.summary).toBe("ProjectController::index");
+    expect(listProjects?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(listProjectsSuccess?.schema?.properties?.data?.type).toBe("array");
+    expect(listProjectsSuccess?.schema?.properties?.data?.items?.type).toBe("object");
+    expect(listProjectsSuccess?.schema?.properties?.meta?.type).toBe("object");
+    expect(listProjectsSuccess?.schema?.properties?.links?.type).toBe("object");
+    expect(listProjectsSuccess?.example).toEqual({
+      data: [
+        {
+          id: 1,
+          name: "Launchpad",
+          owner_email: "owner@example.com",
+        },
+        {
+          id: 2,
+          name: "Atlas",
+          owner_email: "atlas@example.com",
+        },
+      ],
+      meta: {
+        current_page: 1,
+        per_page: 15,
+        total: 2,
+      },
+      links: {
+        next: null,
+        prev: null,
+      },
+    });
+
     const resourceShow = artifacts.normalized.endpoints.find((endpoint) => endpoint.path === "/api/projects/{project}" && endpoint.method === "get");
     const resourceShowSuccess = resourceShow?.responses.find((response) => response.statusCode === "200");
     expect(resourceShow?.parameters).toEqual([
       expect.objectContaining({ name: "project", in: "path" }),
     ]);
+    expect(resourceShow?.tags).toEqual(["Project"]);
     expect(resourceShowSuccess?.schema?.properties?.data?.type).toBe("object");
     expect(resourceShowSuccess?.example).toEqual({
       data: {

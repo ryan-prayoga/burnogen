@@ -4,11 +4,12 @@
     bruno.json
     environments/
       local.bru
+    project/
+      projectcontrollerindex.bru
+      projectcontrollershow.bru
     session/
       sessioncontrollercheck.bru
       sessioncontrollerstore.bru
     user/
       usercontrollerindex.bru
-      usercontrollerindexgetapiprojects.bru
-      usercontrollershow.bru
       usercontrollerstore.bru

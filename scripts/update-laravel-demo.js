@@ -18,9 +18,14 @@ async function main() {
       stdio: "inherit",
     });
 
+    await fs.mkdir(path.join(demoRoot, "bruno", "project"), { recursive: true });
     await fs.mkdir(path.join(demoRoot, "bruno", "user"), { recursive: true });
 
     const openApiContent = await fs.readFile(path.join(generatedRoot, "openapi.yaml"), "utf8");
+    const projectRequest = await fs.readFile(
+      path.join(generatedRoot, "bruno", "project", "projectcontrollerindex.bru"),
+      "utf8",
+    );
     const userRequest = await fs.readFile(
       path.join(generatedRoot, "bruno", "user", "usercontrollerstore.bru"),
       "utf8",
@@ -34,6 +39,11 @@ async function main() {
     await fs.writeFile(
       path.join(demoRoot, "openapi-snippet.yaml"),
       normalizeSnapshot(buildOpenApiSnippet(openApiContent)),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(demoRoot, "bruno", "project", "projectcontrollerindex.bru"),
+      normalizeSnapshot(projectRequest),
       "utf8",
     );
     await fs.writeFile(
@@ -76,6 +86,7 @@ async function appendTreeLines(directory, lines, indent) {
 function buildOpenApiSnippet(openApiContent) {
   const openApi = parse(openApiContent);
   const userCreateOperation = openApi.paths?.["/api/users"]?.post;
+  const projectListOperation = openApi.paths?.["/api/projects"]?.get;
 
   return stringify({
     openapi: openApi.openapi,
@@ -89,6 +100,17 @@ function buildOpenApiSnippet(openApiContent) {
             requestBody: userCreateOperation.requestBody,
             responses: userCreateOperation.responses,
             security: userCreateOperation.security,
+          }
+          : undefined,
+      },
+      "/api/projects": {
+        get: projectListOperation
+          ? {
+            operationId: projectListOperation.operationId,
+            summary: projectListOperation.summary,
+            tags: projectListOperation.tags,
+            parameters: projectListOperation.parameters,
+            responses: projectListOperation.responses,
           }
           : undefined,
       },

@@ -1,0 +1,79 @@
+meta {
+  name: projectcontrollerIndex
+  type: http
+  seq: 5
+  tags: [
+    Project
+  ]
+}
+
+get {
+  url: {{baseUrl}}/api/projects
+  body: none
+  auth: none
+}
+
+params:query {
+  page: {{page}}
+}
+
+headers {
+  accept: application/json
+}
+
+example {
+  name: "200 Response"
+  description: "Inferred Laravel resource response"
+
+  request: {
+    url: {{baseUrl}}/api/projects
+    method: get
+    params:query: {
+      page: {{page}}
+    }
+
+    headers: {
+      accept: application/json
+    }
+  }
+
+  response: {
+    headers: {
+      Content-Type: application/json
+    }
+
+    status: {
+      code: 200
+      text: OK
+    }
+
+    body: {
+      type: json
+      content: '''
+        {
+          "data": [
+            {
+              "id": 1,
+              "name": "Launchpad",
+              "owner_email": "owner@example.com"
+            },
+            {
+              "id": 2,
+              "name": "Atlas",
+              "owner_email": "atlas@example.com"
+            }
+          ],
+          "meta": {
+            "current_page": 1,
+            "per_page": 15,
+            "total": 2
+          },
+          "links": {
+            "next": null,
+            "prev": null
+          }
+        }
+      '''
+    }
+  }
+}

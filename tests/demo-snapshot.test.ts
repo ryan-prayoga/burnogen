@@ -43,6 +43,13 @@ describe("Laravel demo snapshots", () => {
       ));
       const expectedBrunoRequest = await readDemoSnapshot("bruno", "user", "usercontrollerstore.bru");
       expect(actualBrunoRequest).toBe(expectedBrunoRequest);
+
+      const actualProjectRequest = normalizeSnapshot(await fs.readFile(
+        path.join(generatedRoot, "bruno", "project", "projectcontrollerindex.bru"),
+        "utf8",
+      ));
+      const expectedProjectRequest = await readDemoSnapshot("bruno", "project", "projectcontrollerindex.bru");
+      expect(actualProjectRequest).toBe(expectedProjectRequest);
     } finally {
       await fs.rm(sandboxRoot, { recursive: true, force: true });
     }
@@ -97,6 +104,13 @@ function buildOpenApiSnippet(openApiContent: string): string {
     responses?: Record<string, unknown>;
     security?: Array<Record<string, string[]>>;
   } | undefined;
+  const projectListOperation = openApi.paths?.["/api/projects"]?.get as {
+    operationId?: string;
+    summary?: string;
+    tags?: string[];
+    parameters?: Array<Record<string, unknown>>;
+    responses?: Record<string, unknown>;
+  } | undefined;
 
   return stringifyYaml({
     openapi: openApi.openapi,
@@ -110,6 +124,17 @@ function buildOpenApiSnippet(openApiContent: string): string {
             requestBody: userCreateOperation.requestBody,
             responses: userCreateOperation.responses,
             security: userCreateOperation.security,
+          }
+          : undefined,
+      },
+      "/api/projects": {
+        get: projectListOperation
+          ? {
+            operationId: projectListOperation.operationId,
+            summary: projectListOperation.summary,
+            tags: projectListOperation.tags,
+            parameters: projectListOperation.parameters,
+            responses: projectListOperation.responses,
           }
           : undefined,
       },

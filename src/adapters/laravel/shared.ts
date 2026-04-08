@@ -33,6 +33,7 @@ export interface ControllerAnalysis {
 export interface LaravelResourceSchema {
   schema: SchemaObject;
   example: unknown;
+  collectionExample?: unknown[];
 }
 
 export interface ParsedHandler {
