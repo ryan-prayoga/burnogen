@@ -6,10 +6,17 @@ import { repoPath } from "./helpers";
 
 describe("README publish safety", () => {
   it("accepts the checked-in README", async () => {
-    const { findPublishReadmeIssues } = await import("../scripts/check-readme-links.js");
+    const {
+      countReadmeLines,
+      findPublishReadmeIssues,
+      findReadmeLengthIssues,
+      maxReadmeLines,
+    } = await import("../scripts/check-readme-links.js");
     const readme = await fs.readFile(repoPath("README.md"), "utf8");
 
     expect(findPublishReadmeIssues(readme)).toEqual([]);
+    expect(findReadmeLengthIssues(readme)).toEqual([]);
+    expect(countReadmeLines(readme)).toBeLessThanOrEqual(maxReadmeLines);
   });
 
   it("flags relative links and assets that will break on npm", async () => {
@@ -37,5 +44,20 @@ describe("README publish safety", () => {
 `.trim();
 
     expect(findPublishReadmeIssues(content)).toEqual([]);
+  });
+
+  it("flags a README that grows too long for npm", async () => {
+    const { findReadmeLengthIssues, maxReadmeLines } = await import("../scripts/check-readme-links.js");
+    const content = Array.from(
+      { length: maxReadmeLines + 1 },
+      (_, index) => `line ${index + 1}`,
+    ).join("\n");
+
+    expect(findReadmeLengthIssues(content)).toEqual([
+      expect.objectContaining({
+        actualLines: maxReadmeLines + 1,
+        maxLines: maxReadmeLines,
+      }),
+    ]);
   });
 });

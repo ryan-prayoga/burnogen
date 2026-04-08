@@ -3,6 +3,7 @@ const { readFileSync } = require("node:fs");
 
 const repoRoot = path.resolve(__dirname, "..");
 const readmePath = path.join(repoRoot, "README.md");
+const maxReadmeLines = 160;
 
 function lineNumberAt(content, index) {
   let line = 1;
@@ -59,12 +60,35 @@ function findPublishReadmeIssues(content) {
   return matches.filter((match) => !isPublishSafeTarget(match.target));
 }
 
+function countReadmeLines(content) {
+  const normalized = content.replace(/\r\n/g, "\n").trimEnd();
+  if (normalized.length === 0) {
+    return 0;
+  }
+  return normalized.split("\n").length;
+}
+
+function findReadmeLengthIssues(content, options = {}) {
+  const limit = options.maxLines ?? maxReadmeLines;
+  const actualLines = countReadmeLines(content);
+
+  if (actualLines <= limit) {
+    return [];
+  }
+
+  return [{
+    actualLines,
+    maxLines: limit,
+  }];
+}
+
 function main() {
   const content = readFileSync(readmePath, "utf8");
-  const issues = findPublishReadmeIssues(content);
+  const linkIssues = findPublishReadmeIssues(content);
+  const lengthIssues = findReadmeLengthIssues(content);
 
-  if (issues.length > 0) {
-    const summary = issues
+  if (linkIssues.length > 0) {
+    const summary = linkIssues
       .map((issue) => `README.md:${issue.line} ${issue.kind} link is not publish-safe: ${issue.target}`)
       .join("\n");
     throw new Error(
@@ -72,7 +96,14 @@ function main() {
     );
   }
 
-  console.log("README publish links look safe for npm.");
+  if (lengthIssues.length > 0) {
+    const [{ actualLines, maxLines }] = lengthIssues;
+    throw new Error(
+      `README is too long for the npm package page: ${actualLines} lines (max ${maxLines}).`
+    );
+  }
+
+  console.log(`README publish checks passed (${countReadmeLines(content)} lines).`);
 }
 
 if (require.main === module) {
@@ -80,6 +111,9 @@ if (require.main === module) {
 }
 
 module.exports = {
+  countReadmeLines,
   findPublishReadmeIssues,
+  findReadmeLengthIssues,
   isPublishSafeTarget,
+  maxReadmeLines,
 };
