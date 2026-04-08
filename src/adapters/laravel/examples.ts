@@ -371,36 +371,150 @@ function inferLaravelCollectionTransformExample(
   rawValue: string,
   context?: PhpExampleContext,
 ): unknown | typeof unresolvedPhpExample {
-  const normalized = rawValue.replace(/\s+/g, " ").trim();
-  const mapMatch = normalized.match(
-    /^collect\s*\(\s*(.+?)\s*\)\s*->\s*(?:map|through)\s*\(\s*fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*(.+?)\)\s*(?:->\s*filter\s*\(\s*(?:fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*.+?)?\s*\))?\s*(?:->\s*values\s*\(\s*\))?\s*(?:->\s*(?:all|toArray)\s*\(\s*\))?$/,
-  );
-  if (!mapMatch?.[1] || !mapMatch[2]) {
+  const sourceCall = consumePhpCall(rawValue.trim(), "collect");
+  if (!sourceCall?.args) {
     return unresolvedPhpExample;
   }
 
-  const source = resolvePhpExampleValue(mapMatch[1], context);
+  const transformCall =
+    consumePhpChainCall(sourceCall.rest, "map") ??
+    consumePhpChainCall(sourceCall.rest, "through");
+  if (!transformCall?.args) {
+    return unresolvedPhpExample;
+  }
+
+  const parsedCallback = parseLaravelCollectionTransformCallback(
+    transformCall.args,
+  );
+  if (!parsedCallback) {
+    return unresolvedPhpExample;
+  }
+
+  let rest = transformCall.rest;
+
+  const filterCall = consumePhpChainCall(rest, "filter");
+  if (filterCall) {
+    rest = filterCall.rest;
+  }
+
+  const valuesCall = consumePhpChainCall(rest, "values");
+  if (valuesCall) {
+    if (valuesCall.args.trim()) {
+      return unresolvedPhpExample;
+    }
+
+    rest = valuesCall.rest;
+  }
+
+  const finalizeCall =
+    consumePhpChainCall(rest, "all") ?? consumePhpChainCall(rest, "toArray");
+  if (finalizeCall) {
+    if (finalizeCall.args.trim()) {
+      return unresolvedPhpExample;
+    }
+
+    rest = finalizeCall.rest;
+  }
+
+  if (rest.trim()) {
+    return unresolvedPhpExample;
+  }
+
+  const source = resolvePhpExampleValue(sourceCall.args, context);
   if (!Array.isArray(source)) {
-    return unresolvedPhpExample;
-  }
-
-  const lambdaParamMatch = rawValue.match(
-    /fn\s*\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=>/,
-  );
-  const lambdaParam = lambdaParamMatch?.[1];
-  if (!lambdaParam) {
     return unresolvedPhpExample;
   }
 
   return source.map((item) =>
     parsePhpExampleValue(
-      mapMatch[2],
+      parsedCallback.expression,
       createPhpExampleContext(
         "",
-        new Map([[lambdaParam, stringifyPhpExampleValue(item)]]),
+        new Map([
+          [parsedCallback.parameter, stringifyPhpExampleValue(item)],
+        ]),
       ),
     ),
   );
+}
+
+function consumePhpCall(
+  input: string,
+  name: string,
+): { args: string; rest: string } | null {
+  const nameMatch = input.match(new RegExp(`^\\s*${name}\\s*`));
+  const callPrefix = nameMatch?.[0];
+  if (!callPrefix) {
+    return null;
+  }
+
+  const openIndex = input.indexOf("(", callPrefix.length);
+  if (openIndex < 0) {
+    return null;
+  }
+
+  const call = extractBalanced(input, openIndex, "(", ")");
+  if (!call) {
+    return null;
+  }
+
+  return {
+    args: call.slice(1, -1).trim(),
+    rest: input.slice(openIndex + call.length),
+  };
+}
+
+function consumePhpChainCall(
+  input: string,
+  name: string,
+): { args: string; rest: string } | null {
+  const chainMatch = input.match(new RegExp(`^\\s*->\\s*${name}\\s*`));
+  const chainPrefix = chainMatch?.[0];
+  if (!chainPrefix) {
+    return null;
+  }
+
+  const openIndex = input.indexOf("(", chainPrefix.length);
+  if (openIndex < 0) {
+    return null;
+  }
+
+  const call = extractBalanced(input, openIndex, "(", ")");
+  if (!call) {
+    return null;
+  }
+
+  return {
+    args: call.slice(1, -1).trim(),
+    rest: input.slice(openIndex + call.length),
+  };
+}
+
+function parseLaravelCollectionTransformCallback(
+  rawCallback: string,
+): { parameter: string; expression: string } | null {
+  const callback = rawCallback.trim();
+  const arrowMatch = callback.match(
+    /^fn\s*\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=>\s*([\s\S]+)$/,
+  );
+  if (arrowMatch?.[1] && arrowMatch[2]) {
+    return {
+      parameter: arrowMatch[1],
+      expression: arrowMatch[2].trim(),
+    };
+  }
+
+  const closureMatch = callback.match(
+    /^function\s*\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*(?:use\s*\([\s\S]*?\)\s*)?\{\s*return\s+([\s\S]+?);\s*\}$/,
+  );
+  if (closureMatch?.[1] && closureMatch[2]) {
+    return {
+      parameter: closureMatch[1],
+      expression: closureMatch[2].trim(),
+    };
+  }
+
+  return null;
 }
 
 function buildPhpExampleForField(

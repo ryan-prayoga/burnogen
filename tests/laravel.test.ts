@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(10);
+    expect(artifacts.normalized.endpoints).toHaveLength(11);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -687,6 +687,53 @@ describe("Laravel adapter", () => {
         from: 1,
         last_page: 1,
         per_page: 7,
+        to: 1,
+        total: 1,
+      },
+      links: {
+        first: "?page=1",
+        last: "?page=1",
+        prev: null,
+        next: null,
+      },
+    });
+
+    const collectionClosure = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/projects/collection-closure" && endpoint.method === "get",
+    );
+    const collectionClosureSuccess = collectionClosure?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(collectionClosure?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(collectionClosureSuccess?.schema?.properties?.data).toBeUndefined();
+    expect(collectionClosureSuccess?.schema?.properties?.closures?.type).toBe("array");
+    expect(
+      collectionClosureSuccess?.schema?.properties?.closures?.items?.properties?.identifier?.type,
+    ).toBe("integer");
+    expect(
+      collectionClosureSuccess?.schema?.properties?.closures?.items?.properties?.owner?.type,
+    ).toBe("string");
+    expect(
+      collectionClosureSuccess?.schema?.properties?.closures?.items?.properties?.label?.type,
+    ).toBe("string");
+    expect(collectionClosureSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(collectionClosureSuccess?.example).toEqual({
+      closures: [
+        {
+          identifier: 1,
+          owner: "user@example.com",
+          label: "closure-project",
+        },
+      ],
+      meta: {
+        current_page: 1,
+        from: 1,
+        last_page: 1,
+        per_page: 9,
         to: 1,
         total: 1,
       },
