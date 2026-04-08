@@ -9,12 +9,14 @@ describe("README publish safety", () => {
     const {
       countReadmeLines,
       findPublishReadmeIssues,
+      findRepoHostedPathIssues,
       findReadmeLengthIssues,
       maxReadmeLines,
     } = await import("../scripts/check-readme-links.js");
     const readme = await fs.readFile(repoPath("README.md"), "utf8");
 
     expect(findPublishReadmeIssues(readme)).toEqual([]);
+    expect(findRepoHostedPathIssues(readme)).toEqual([]);
     expect(findReadmeLengthIssues(readme)).toEqual([]);
     expect(countReadmeLines(readme)).toBeLessThanOrEqual(maxReadmeLines);
   });
@@ -35,7 +37,7 @@ describe("README publish safety", () => {
   });
 
   it("allows absolute and anchor links", async () => {
-    const { findPublishReadmeIssues } = await import("../scripts/check-readme-links.js");
+    const { findPublishReadmeIssues, findRepoHostedPathIssues } = await import("../scripts/check-readme-links.js");
     const content = `
 [reference](https://github.com/ryan-prayoga/brunogen/blob/main/docs/reference.md)
 [section](#read-more)
@@ -44,6 +46,7 @@ describe("README publish safety", () => {
 `.trim();
 
     expect(findPublishReadmeIssues(content)).toEqual([]);
+    expect(findRepoHostedPathIssues(content)).toEqual([]);
   });
 
   it("flags a README that grows too long for npm", async () => {
@@ -57,6 +60,27 @@ describe("README publish safety", () => {
       expect.objectContaining({
         actualLines: maxReadmeLines + 1,
         maxLines: maxReadmeLines,
+      }),
+    ]);
+  });
+
+  it("flags repo-hosted links that point to missing files", async () => {
+    const { findRepoHostedPathIssues } = await import("../scripts/check-readme-links.js");
+    const content = `
+[broken](https://github.com/ryan-prayoga/brunogen/blob/main/docs/missing-reference.md)
+<img src="https://raw.githubusercontent.com/ryan-prayoga/brunogen/main/docs/assets/missing-preview.png" />
+`.trim();
+
+    expect(findRepoHostedPathIssues(content)).toEqual([
+      expect.objectContaining({
+        kind: "markdown",
+        repoPath: "docs/missing-reference.md",
+        line: 1,
+      }),
+      expect.objectContaining({
+        kind: "html",
+        repoPath: "docs/assets/missing-preview.png",
+        line: 2,
       }),
     ]);
   });
