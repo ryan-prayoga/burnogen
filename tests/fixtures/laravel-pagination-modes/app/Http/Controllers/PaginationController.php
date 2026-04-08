@@ -6,6 +6,7 @@ use App\Http\Resources\ProjectAutoCollection;
 use App\Http\Resources\ProjectMethodCollection;
 use App\Http\Resources\ProjectCollection;
 use App\Http\Resources\ProjectResource;
+use App\Http\Resources\ProjectMappedCollection;
 use App\Http\Resources\ProjectWrappedCollection;
 
 class PaginationController
@@ -79,6 +80,15 @@ class PaginationController
 
         return new ProjectWrappedCollection(
             Project::query()->paginate(4, ['*'], 'page', $page)
+        );
+    }
+
+    public function collectionMapped()
+    {
+        $page = request()->query('page');
+
+        return new ProjectMappedCollection(
+            Project::query()->paginate(3, ['*'], 'page', $page)
         );
     }
 }

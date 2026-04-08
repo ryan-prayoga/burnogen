@@ -207,6 +207,14 @@ function resolvePhpExampleValue(
     return requestAccessorExample;
   }
 
+  const collectionTransformExample = inferLaravelCollectionTransformExample(
+    value,
+    context,
+  );
+  if (collectionTransformExample !== unresolvedPhpExample) {
+    return collectionTransformExample;
+  }
+
   const propertyAccessMatch = value.match(
     /^\$([A-Za-z_][A-Za-z0-9_]*)->([A-Za-z_][A-Za-z0-9_]*)$/,
   );
@@ -234,6 +242,26 @@ function resolvePhpExampleValue(
     }
 
     return buildPhpExampleForField(propertyName);
+  }
+
+  const arrayAccessMatch = value.match(
+    /^\$([A-Za-z_][A-Za-z0-9_]*)\[['"]([^'"]+)['"]\]$/,
+  );
+  if (arrayAccessMatch?.[1] && arrayAccessMatch[2]) {
+    const baseValue = resolvePhpVariableExample(arrayAccessMatch[1], context);
+    const fieldName = arrayAccessMatch[2];
+
+    if (
+      baseValue !== unresolvedPhpExample &&
+      baseValue &&
+      typeof baseValue === "object" &&
+      !Array.isArray(baseValue) &&
+      fieldName in baseValue
+    ) {
+      return (baseValue as Record<string, unknown>)[fieldName];
+    }
+
+    return buildPhpExampleForField(fieldName);
   }
 
   return unresolvedPhpExample;
@@ -339,6 +367,42 @@ function inferLaravelRequestAccessorExample(
   return unresolvedPhpExample;
 }
 
+function inferLaravelCollectionTransformExample(
+  rawValue: string,
+  context?: PhpExampleContext,
+): unknown | typeof unresolvedPhpExample {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const mapMatch = normalized.match(
+    /^collect\s*\(\s*(.+?)\s*\)\s*->\s*map\s*\(\s*fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*(.+?)\)\s*(?:->\s*values\s*\(\s*\))?\s*(?:->\s*(?:all|toArray)\s*\(\s*\))?$/,
+  );
+  if (!mapMatch?.[1] || !mapMatch[2]) {
+    return unresolvedPhpExample;
+  }
+
+  const source = resolvePhpExampleValue(mapMatch[1], context);
+  if (!Array.isArray(source)) {
+    return unresolvedPhpExample;
+  }
+
+  const lambdaParamMatch = rawValue.match(
+    /fn\s*\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*=>/,
+  );
+  const lambdaParam = lambdaParamMatch?.[1];
+  if (!lambdaParam) {
+    return unresolvedPhpExample;
+  }
+
+  return source.map((item) =>
+    parsePhpExampleValue(
+      mapMatch[2],
+      createPhpExampleContext(
+        "",
+        new Map([[lambdaParam, stringifyPhpExampleValue(item)]]),
+      ),
+    ),
+  );
+}
+
 function buildPhpExampleForField(
   fieldName: string,
   type:
@@ -418,6 +482,34 @@ function buildPhpExampleForField(
   }
 
   return fieldName;
+}
+
+function stringifyPhpExampleValue(value: unknown): string {
+  if (value === null) {
+    return "null";
+  }
+
+  if (typeof value === "string") {
+    return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stringifyPhpExampleValue(entry)).join(", ")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).map(
+      ([key, entryValue]) =>
+        `'${key}' => ${stringifyPhpExampleValue(entryValue)}`,
+    );
+    return `[${entries.join(", ")}]`;
+  }
+
+  return "null";
 }
 
 function unwrapPhpParentheses(input: string): string {
