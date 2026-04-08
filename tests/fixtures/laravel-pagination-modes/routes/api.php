@@ -10,4 +10,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/collection-class', [PaginationController::class, 'collectionClass']);
     Route::get('/projects/collection-auto', [PaginationController::class, 'collectionAuto']);
     Route::get('/projects/collection-method', [PaginationController::class, 'collectionMethod']);
+    Route::get('/projects/collection-wrapped', [PaginationController::class, 'collectionWrapped']);
 });

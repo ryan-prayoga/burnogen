@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(6);
+    expect(artifacts.normalized.endpoints).toHaveLength(7);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -496,6 +496,56 @@ describe("Laravel adapter", () => {
         from: 1,
         last_page: 1,
         per_page: 6,
+        to: 1,
+        total: 1,
+      },
+      links: {
+        first: "?page=1",
+        last: "?page=1",
+        prev: null,
+        next: null,
+      },
+    });
+
+    const collectionWrapped = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/projects/collection-wrapped" && endpoint.method === "get",
+    );
+    const collectionWrappedSuccess = collectionWrapped?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(collectionWrapped?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(collectionWrappedSuccess?.schema?.properties?.data).toBeUndefined();
+    expect(collectionWrappedSuccess?.schema?.properties?.items?.type).toBe("array");
+    expect(
+      collectionWrappedSuccess?.schema?.properties?.items?.items?.properties?.code?.type,
+    ).toBe("string");
+    expect(
+      collectionWrappedSuccess?.schema?.properties?.items?.items?.properties?.owner_email?.type,
+    ).toBe("string");
+    expect(
+      collectionWrappedSuccess?.schema?.properties?.pagination?.properties?.source?.type,
+    ).toBe("string");
+    expect(collectionWrappedSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(collectionWrappedSuccess?.schema?.properties?.links?.properties?.first?.type).toBe("string");
+    expect(collectionWrappedSuccess?.example).toEqual({
+      items: [
+        {
+          code: "PRJ-1",
+          owner_email: "user@example.com",
+        },
+      ],
+      pagination: {
+        source: "wrapped_collection",
+      },
+      meta: {
+        current_page: 1,
+        from: 1,
+        last_page: 1,
+        per_page: 4,
         to: 1,
         total: 1,
       },
