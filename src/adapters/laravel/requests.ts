@@ -114,7 +114,11 @@ export async function analyzeControllerHandler(
     if (inlineRules) {
       requestBody = {
         contentType: "application/json" as const,
-        schema: buildLaravelSchemaFromRules(inlineRules),
+        schema: await buildLaravelSchemaFromRules(
+          inlineRules,
+          classIndex,
+          fileContext,
+        ),
       };
     }
 

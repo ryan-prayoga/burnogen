@@ -53,6 +53,38 @@ describe("Laravel adapter", () => {
     expect(createUser?.auth.type).toBe("bearer");
     expect(createUser?.requestBody?.schema.properties?.name?.type).toBe("string");
     expect(createUser?.requestBody?.schema.required).toContain("name");
+    expect(createUser?.requestBody?.schema.properties?.status?.enum).toEqual([
+      "draft",
+      "active",
+    ]);
+    expect(createUser?.requestBody?.schema.properties?.members?.type).toBe("array");
+    expect(createUser?.requestBody?.schema.required).toContain("members");
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.type,
+    ).toBe("object");
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.required,
+    ).toEqual(expect.arrayContaining(["email", "role"]));
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.properties?.email?.format,
+    ).toBe("email");
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.properties?.role?.enum,
+    ).toEqual(["owner", "member"]);
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.properties?.permissions?.type,
+    ).toBe("array");
+    expect(
+      createUser?.requestBody?.schema.properties?.members?.items?.properties?.permissions?.items?.enum,
+    ).toEqual(["read", "write"]);
+    expect(createUser?.requestBody?.schema.properties?.profile?.type).toBe("object");
+    expect(createUser?.requestBody?.schema.properties?.profile?.nullable).toBe(true);
+    expect(
+      createUser?.requestBody?.schema.properties?.profile?.required,
+    ).toContain("name");
+    expect(
+      createUser?.requestBody?.schema.properties?.profile?.properties?.timezone?.nullable,
+    ).toBe(true);
     expect(createUser?.responses[0]?.statusCode).toBe("201");
     expect(createUser?.responses[0]?.schema?.properties?.data?.type).toBe("object");
     expect(createUser?.responses[0]?.example).toEqual({

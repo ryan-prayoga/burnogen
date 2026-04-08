@@ -26,7 +26,21 @@ body:json {
   {
     "name": "",
     "email": "user@example.com",
-    "age": 1
+    "age": 1,
+    "status": "draft",
+    "members": [
+      {
+        "email": "user@example.com",
+        "role": "owner",
+        "permissions": [
+          "read"
+        ]
+      }
+    ],
+    "profile": {
+      "name": "",
+      "timezone": ""
+    }
   }
 }
 
@@ -47,7 +61,21 @@ example {
       {
         "name": "",
         "email": "user@example.com",
-        "age": 1
+        "age": 1,
+        "status": "draft",
+        "members": [
+          {
+            "email": "user@example.com",
+            "role": "owner",
+            "permissions": [
+              "read"
+            ]
+          }
+        ],
+        "profile": {
+          "name": "",
+          "timezone": ""
+        }
       }
     }
   }

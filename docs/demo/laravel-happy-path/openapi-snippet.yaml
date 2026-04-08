@@ -23,9 +23,49 @@ paths:
                   nullable: true
                   minimum: 18
                   type: integer
+                status:
+                  enum:
+                    - draft
+                    - active
+                  type: string
+                members:
+                  items:
+                    type: object
+                    properties:
+                      email:
+                        format: email
+                        type: string
+                      role:
+                        enum:
+                          - owner
+                          - member
+                        type: string
+                      permissions:
+                        items:
+                          type: string
+                          enum:
+                            - read
+                            - write
+                        type: array
+                    required:
+                      - email
+                      - role
+                  type: array
+                profile:
+                  nullable: true
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    timezone:
+                      nullable: true
+                      type: string
+                  required:
+                    - name
               required:
                 - name
                 - email
+                - members
       responses:
         "201":
           description: Inferred JSON response
