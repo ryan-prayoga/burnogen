@@ -16,11 +16,12 @@
     "demo:express": "npm run build && node scripts/update-express-demo.js",
     "demo:go": "npm run build && node scripts/update-go-demo.js",
     "pack:check": "node scripts/check-pack-size.js",
+    "readme:check": "node scripts/check-readme-links.js",
     "prepare": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm test && npm run build && npm run pack:check && node dist/cli.js --help"
+    "verify": "npm run typecheck && npm test && npm run build && npm run pack:check && npm run readme:check && node dist/cli.js --help"
   },
   "keywords": [
     "bruno",
