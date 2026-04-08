@@ -17,4 +17,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/collection-closure', [PaginationController::class, 'collectionClosure']);
     Route::get('/projects/collection-typed-closure', [PaginationController::class, 'collectionTypedClosure']);
     Route::get('/projects/collection-indexed', [PaginationController::class, 'collectionIndexed']);
+    Route::get('/projects/collection-direct', [PaginationController::class, 'collectionDirect']);
 });

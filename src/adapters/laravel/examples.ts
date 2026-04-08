@@ -371,26 +371,19 @@ function inferLaravelCollectionTransformExample(
   rawValue: string,
   context?: PhpExampleContext,
 ): unknown | typeof unresolvedPhpExample {
-  const sourceCall = consumePhpCall(rawValue.trim(), "collect");
-  if (!sourceCall?.args) {
-    return unresolvedPhpExample;
-  }
-
-  const transformCall =
-    consumePhpChainCall(sourceCall.rest, "map") ??
-    consumePhpChainCall(sourceCall.rest, "through");
-  if (!transformCall?.args) {
+  const parsedChain = parseLaravelCollectionTransformChain(rawValue);
+  if (!parsedChain) {
     return unresolvedPhpExample;
   }
 
   const parsedCallback = parseLaravelCollectionTransformCallback(
-    transformCall.args,
+    parsedChain.args,
   );
   if (!parsedCallback) {
     return unresolvedPhpExample;
   }
 
-  let rest = transformCall.rest;
+  let rest = parsedChain.rest;
 
   const filterCall = consumePhpChainCall(rest, "filter");
   if (filterCall) {
@@ -420,7 +413,7 @@ function inferLaravelCollectionTransformExample(
     return unresolvedPhpExample;
   }
 
-  const source = resolvePhpExampleValue(sourceCall.args, context);
+  const source = resolvePhpExampleValue(parsedChain.sourceExpression, context);
   if (!Array.isArray(source)) {
     return unresolvedPhpExample;
   }
@@ -438,6 +431,28 @@ function inferLaravelCollectionTransformExample(
       createPhpExampleContext("", seedAssignments),
     );
   });
+}
+
+function parseLaravelCollectionTransformChain(
+  rawValue: string,
+): { sourceExpression: string; args: string; rest: string } | null {
+  const trimmed = rawValue.trim();
+
+  const collectedSource = consumePhpCall(trimmed, "collect");
+  if (collectedSource?.args) {
+    const collectedTransform =
+      consumePhpChainCall(collectedSource.rest, "map") ??
+      consumePhpChainCall(collectedSource.rest, "through");
+    if (collectedTransform?.args) {
+      return {
+        sourceExpression: collectedSource.args,
+        args: collectedTransform.args,
+        rest: collectedTransform.rest,
+      };
+    }
+  }
+
+  return consumePhpLeadingSourceChainCall(trimmed, ["map", "through"]);
 }
 
 function consumePhpCall(
@@ -466,6 +481,33 @@ function consumePhpCall(
   };
 }
 
+function consumePhpLeadingSourceChainCall(
+  input: string,
+  names: string[],
+): { sourceExpression: string; args: string; rest: string } | null {
+  const trimmed = input.trim();
+  const chainMatch = findPhpTopLevelChainCall(trimmed, names);
+  if (!chainMatch?.name) {
+    return null;
+  }
+
+  const sourceExpression = trimmed.slice(0, chainMatch.index).trim();
+  if (!sourceExpression) {
+    return null;
+  }
+
+  const chainCall = consumePhpChainCall(trimmed.slice(chainMatch.index), chainMatch.name);
+  if (!chainCall?.args) {
+    return null;
+  }
+
+  return {
+    sourceExpression,
+    args: chainCall.args,
+    rest: chainCall.rest,
+  };
+}
+
 function consumePhpChainCall(
   input: string,
   name: string,
@@ -490,6 +532,86 @@ function consumePhpChainCall(
     args: call.slice(1, -1).trim(),
     rest: input.slice(openIndex + call.length),
   };
+}
+
+function findPhpTopLevelChainCall(
+  input: string,
+  names: string[],
+): { index: number; name: string } | null {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | '"' | "`" | null = null;
+  let escaped = false;
+
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === '"' || character === "`") {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
+    if (character === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      braceDepth -= 1;
+      continue;
+    }
+
+    if (parenDepth !== 0 || bracketDepth !== 0 || braceDepth !== 0) {
+      continue;
+    }
+
+    for (const name of names) {
+      if (input.startsWith(`->${name}`, index)) {
+        return { index, name };
+      }
+    }
+  }
+
+  return null;
 }
 
 function parseLaravelCollectionTransformCallback(
