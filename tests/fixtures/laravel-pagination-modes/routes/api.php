@@ -26,4 +26,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/collection-json-wrapped', [PaginationController::class, 'collectionJsonWrapped']);
     Route::get('/projects/collection-response-status', [PaginationController::class, 'collectionResponseStatus']);
     Route::get('/projects/collection-response-headers', [PaginationController::class, 'collectionResponseHeaders']);
+    Route::get('/projects/nested-json-resource', [PaginationController::class, 'nestedJsonResource']);
 });

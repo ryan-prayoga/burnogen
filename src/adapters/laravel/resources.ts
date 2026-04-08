@@ -59,6 +59,60 @@ export async function extractLaravelResourceResponses(
   return dedupeResponsesByStatusCode(responses);
 }
 
+export async function extractLaravelWrappedJsonResourcePayload(
+  payloadExpression: string,
+  classIndex: Map<string, PhpClassRecord>,
+  exampleContext: PhpExampleContext,
+  fileContext?: PhpFileContext,
+): Promise<{ schema: SchemaObject; example: unknown } | undefined> {
+  const trimmed = payloadExpression.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    return undefined;
+  }
+
+  const entries = splitTopLevel(trimmed.slice(1, -1), ",");
+  const exampleEntries: Array<[string, unknown]> = [];
+  let foundResourceEntry = false;
+
+  for (const entry of entries) {
+    const arrowIndex = findLaravelTopLevelArrowIndex(entry);
+    if (arrowIndex < 0) {
+      return undefined;
+    }
+
+    const rawKey = entry.slice(0, arrowIndex).trim();
+    const rawValue = entry.slice(arrowIndex + 2).trim();
+    const key = parsePhpString(rawKey) ?? rawKey;
+
+    const nestedResource = await resolveLaravelNestedResourceExample(
+      rawValue,
+      classIndex,
+      exampleContext,
+      fileContext,
+    );
+    if (nestedResource !== undefined) {
+      foundResourceEntry = true;
+      exampleEntries.push([String(key), nestedResource]);
+      continue;
+    }
+
+    exampleEntries.push([
+      String(key),
+      parsePhpExampleValue(rawValue, exampleContext),
+    ]);
+  }
+
+  if (!foundResourceEntry) {
+    return undefined;
+  }
+
+  const example = Object.fromEntries(exampleEntries);
+  return {
+    schema: inferSchemaFromExample(example),
+    example,
+  };
+}
+
 async function buildLaravelResourceResponse(
   resourceType: string,
   mode: "single" | "collection",
@@ -129,6 +183,35 @@ async function buildLaravelResourceResponse(
     schema: wrappedSchema,
     example: wrappedExample,
   };
+}
+
+async function resolveLaravelNestedResourceExample(
+  expression: string,
+  classIndex: Map<string, PhpClassRecord>,
+  exampleContext: PhpExampleContext,
+  fileContext?: PhpFileContext,
+): Promise<unknown | undefined> {
+  const parsedResource = parseLaravelResourceReturnStatement(
+    `return ${expression};`,
+    exampleContext,
+  );
+  if (!parsedResource) {
+    return undefined;
+  }
+
+  const resourceSchema = await parseLaravelResourceSchema(
+    parsedResource.resourceType,
+    classIndex,
+    parsedResource.payload,
+    fileContext,
+  );
+  if (!resourceSchema) {
+    return undefined;
+  }
+
+  return parsedResource.mode === "collection"
+    ? resourceSchema.collectionExample ?? [resourceSchema.example]
+    : resourceSchema.example;
 }
 
 async function parseLaravelResourceSchema(
@@ -590,6 +673,84 @@ function inferLaravelResourceStatusCode(
   }
 
   return rawStatus.trim().match(/^\d{3}$/)?.[0] || undefined;
+}
+
+function findLaravelTopLevelArrowIndex(input: string): number {
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  for (let index = 0; index < input.length - 1; index += 1) {
+    const character = input[index];
+    const nextCharacter = input[index + 1];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (character === "'" || character === '"') {
+      if (quote === character) {
+        quote = null;
+      } else if (!quote) {
+        quote = character;
+      }
+      continue;
+    }
+
+    if (quote) {
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth -= 1;
+      continue;
+    }
+
+    if (character === "{") {
+      braceDepth += 1;
+      continue;
+    }
+
+    if (character === "}") {
+      braceDepth -= 1;
+      continue;
+    }
+
+    if (
+      parenDepth === 0 &&
+      bracketDepth === 0 &&
+      braceDepth === 0 &&
+      character === "=" &&
+      nextCharacter === ">"
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
 }
 
 function extractLaravelResourceAdditional(

@@ -21,6 +21,7 @@ import {
 } from "./shared";
 import {
   extractLaravelResourceResponses,
+  extractLaravelWrappedJsonResourcePayload,
   isLaravelResourceResponseExpression,
 } from "./resources";
 
@@ -41,6 +42,24 @@ export async function extractLaravelResponses(
   for (const jsonCall of extractReturnResponseJsonCalls(methodBody)) {
     const args = splitTopLevel(jsonCall.slice(1, -1), ",");
     if (args.length === 0) {
+      continue;
+    }
+
+    const wrappedResourcePayload = await extractLaravelWrappedJsonResourcePayload(
+      args[0] ?? "",
+      classIndex,
+      exampleContext,
+      fileContext,
+    );
+    if (wrappedResourcePayload) {
+      const statusCode = parseLaravelStatusCode(args[1]) ?? "200";
+      responses.set(statusCode, {
+        statusCode,
+        description: "Inferred JSON response",
+        contentType: "application/json",
+        schema: wrappedResourcePayload.schema,
+        example: wrappedResourcePayload.example,
+      });
       continue;
     }
 

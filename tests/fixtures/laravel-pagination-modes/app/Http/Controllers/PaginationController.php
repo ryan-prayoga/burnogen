@@ -237,4 +237,18 @@ class PaginationController
             ])
             ->setStatusCode(207);
     }
+
+    public function nestedJsonResource()
+    {
+        return response()->json([
+            'project' => ProjectResource::make((object) [
+                'id' => 7,
+                'name' => 'Nested Launchpad',
+                'owner_email' => 'nested@example.com',
+            ]),
+            'meta' => [
+                'source' => 'wrapped_json',
+            ],
+        ], 201);
+    }
 }

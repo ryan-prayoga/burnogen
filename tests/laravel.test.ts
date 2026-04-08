@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(22);
+    expect(artifacts.normalized.endpoints).toHaveLength(23);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -1304,6 +1304,38 @@ describe("Laravel adapter", () => {
         last: "?page=1",
         prev: null,
         next: null,
+      },
+    });
+
+    const nestedJsonResource = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/projects/nested-json-resource" &&
+        endpoint.method === "get",
+    );
+    const nestedJsonResourceCreated = nestedJsonResource?.responses.find(
+      (response) => response.statusCode === "201",
+    );
+    expect(nestedJsonResourceCreated?.schema?.properties?.project?.type).toBe("object");
+    expect(
+      nestedJsonResourceCreated?.schema?.properties?.project?.properties?.id?.type,
+    ).toBe("integer");
+    expect(
+      nestedJsonResourceCreated?.schema?.properties?.project?.properties?.name?.type,
+    ).toBe("string");
+    expect(
+      nestedJsonResourceCreated?.schema?.properties?.project?.properties?.owner_email?.type,
+    ).toBe("string");
+    expect(
+      nestedJsonResourceCreated?.schema?.properties?.meta?.properties?.source?.type,
+    ).toBe("string");
+    expect(nestedJsonResourceCreated?.example).toEqual({
+      project: {
+        id: 7,
+        name: "Nested Launchpad",
+        owner_email: "nested@example.com",
+      },
+      meta: {
+        source: "wrapped_json",
       },
     });
   });
