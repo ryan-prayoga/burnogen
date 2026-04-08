@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.4.8
+
+_Released: 2026-04-08_
+
+- Shorten the top-level README so the npm package page stays scannable instead of pushing core usage details too far down the page
+- Move detailed quickstarts, examples, config, support matrix, and limitations into `docs/reference.md` so the longer reference still exists without bloating the package landing page
+
 ## v0.4.7
 
 _Released: 2026-04-08_
