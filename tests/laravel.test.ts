@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(2);
+    expect(artifacts.normalized.endpoints).toHaveLength(3);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -316,6 +316,54 @@ describe("Laravel adapter", () => {
       links: {
         prev: "?cursor=prev_cursor",
         next: "?cursor=next_cursor",
+      },
+    });
+
+    const merged = artifacts.normalized.endpoints.find(
+      (endpoint) => endpoint.path === "/api/projects/merged" && endpoint.method === "get",
+    );
+    const mergedSuccess = merged?.responses.find((response) => response.statusCode === "200");
+    expect(merged?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(mergedSuccess?.schema?.properties?.meta?.properties?.current_page?.type).toBe("integer");
+    expect(mergedSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(mergedSuccess?.schema?.properties?.meta?.properties?.source?.type).toBe("string");
+    expect(mergedSuccess?.schema?.properties?.links?.properties?.first?.type).toBe("string");
+    expect(mergedSuccess?.schema?.properties?.links?.properties?.last?.type).toBe("string");
+    expect(mergedSuccess?.schema?.properties?.links?.properties?.prev).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(mergedSuccess?.schema?.properties?.links?.properties?.next).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(mergedSuccess?.schema?.properties?.links?.properties?.docs?.type).toBe("string");
+    expect(mergedSuccess?.example).toEqual({
+      data: [
+        {
+          id: 1,
+          name: "Jane Doe",
+          owner_email: "user@example.com",
+        },
+      ],
+      meta: {
+        current_page: 1,
+        from: 1,
+        last_page: 1,
+        per_page: 99,
+        to: 1,
+        total: 1,
+        source: "manual",
+      },
+      links: {
+        first: "?page=1",
+        last: "?page=1",
+        prev: null,
+        next: "https://example.test/projects?page=2",
+        docs: "https://example.test/docs/pagination",
       },
     });
   });
