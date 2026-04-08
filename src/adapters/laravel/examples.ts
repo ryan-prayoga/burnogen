@@ -513,7 +513,8 @@ function parseLaravelCollectionTransformChain(
   if (collectedSource?.args) {
     const collectedTransform =
       consumePhpChainCall(collectedSource.rest, "map") ??
-      consumePhpChainCall(collectedSource.rest, "through");
+      consumePhpChainCall(collectedSource.rest, "through") ??
+      consumePhpChainCall(collectedSource.rest, "transform");
     if (collectedTransform?.args) {
       return {
         sourceExpression: collectedSource.args,
@@ -523,7 +524,11 @@ function parseLaravelCollectionTransformChain(
     }
   }
 
-  return consumePhpLeadingSourceChainCall(trimmed, ["map", "through"]);
+  return consumePhpLeadingSourceChainCall(trimmed, [
+    "map",
+    "through",
+    "transform",
+  ]);
 }
 
 function consumePhpCall(

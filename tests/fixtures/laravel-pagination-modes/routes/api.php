@@ -20,4 +20,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/collection-direct', [PaginationController::class, 'collectionDirect']);
     Route::get('/projects/collection-assigned', [PaginationController::class, 'collectionAssigned']);
     Route::get('/projects/collection-prefiltered', [PaginationController::class, 'collectionPreFiltered']);
+    Route::get('/projects/collection-transform', [PaginationController::class, 'collectionTransform']);
 });

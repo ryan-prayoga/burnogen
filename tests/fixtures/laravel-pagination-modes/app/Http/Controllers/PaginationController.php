@@ -11,6 +11,7 @@ use App\Http\Resources\ProjectAssignedCollection;
 use App\Http\Resources\ProjectDirectCollection;
 use App\Http\Resources\ProjectIndexedCollection;
 use App\Http\Resources\ProjectPreFilteredCollection;
+use App\Http\Resources\ProjectTransformCollection;
 use App\Http\Resources\ProjectTypedClosureCollection;
 use App\Http\Resources\ProjectMappedCollection;
 use App\Http\Resources\ProjectFilteredCollection;
@@ -169,6 +170,15 @@ class PaginationController
 
         return new ProjectPreFilteredCollection(
             Project::query()->paginate(16, ['*'], 'page', $page)
+        );
+    }
+
+    public function collectionTransform()
+    {
+        $page = request()->query('page');
+
+        return new ProjectTransformCollection(
+            Project::query()->paginate(17, ['*'], 'page', $page)
         );
     }
 }
