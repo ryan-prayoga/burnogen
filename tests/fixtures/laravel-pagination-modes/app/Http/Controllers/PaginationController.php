@@ -213,4 +213,13 @@ class PaginationController
             202
         );
     }
+
+    public function collectionResponseStatus()
+    {
+        $page = request()->query('page');
+
+        return ProjectResource::collection(
+            Project::query()->paginate(22, ['*'], 'page', $page)
+        )->response()->setStatusCode(206);
+    }
 }

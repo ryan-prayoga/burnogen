@@ -358,6 +358,14 @@ function parseLaravelResourceReturnStatement(
     return wrappedJsonCall;
   }
 
+  const responseChainCall = parseLaravelResourceResponseChainStatement(
+    statement,
+    exampleContext,
+  );
+  if (responseChainCall) {
+    return responseChainCall;
+  }
+
   const newResourceMatch = statement.match(
     /^return\s+new\s+([A-Za-z0-9_\\]+)\s*\(/,
   );
@@ -468,6 +476,83 @@ function parseLaravelResponseJsonResourceStatement(
   return {
     ...parsedResourceExpression,
     statusCode: inferLaravelResourceStatusCode(args[1], exampleContext) ?? "200",
+  };
+}
+
+function parseLaravelResourceResponseChainStatement(
+  statement: string,
+  exampleContext: PhpExampleContext,
+):
+  | {
+      resourceType: string;
+      mode: "single" | "collection";
+      additional?: unknown;
+      additionalSchema?: SchemaObject;
+      payload?: unknown;
+      statusCode?: string;
+    }
+  | undefined {
+  const statementBody = statement.trim().replace(/;\s*$/, "");
+  const responseIndex = statementBody.indexOf("->response(");
+  if (!statementBody.startsWith("return ") || responseIndex < 0) {
+    return undefined;
+  }
+
+  const resourceExpression = statementBody
+    .slice("return ".length, responseIndex)
+    .trim();
+  if (!isLaravelResourceResponseExpression(resourceExpression)) {
+    return undefined;
+  }
+
+  const responseOpenParenIndex = statementBody.indexOf(
+    "(",
+    responseIndex + "->response".length,
+  );
+  const responseArgsBlock =
+    responseOpenParenIndex >= 0
+      ? extractBalanced(statementBody, responseOpenParenIndex, "(", ")")
+      : null;
+  if (!responseArgsBlock) {
+    return undefined;
+  }
+
+  let rest = statementBody
+    .slice(responseOpenParenIndex + responseArgsBlock.length)
+    .trim();
+  let statusCode = "200";
+
+  if (rest.startsWith("->setStatusCode(")) {
+    const statusOpenParenIndex = rest.indexOf("(");
+    const statusArgsBlock =
+      statusOpenParenIndex >= 0
+        ? extractBalanced(rest, statusOpenParenIndex, "(", ")")
+        : null;
+    if (!statusArgsBlock) {
+      return undefined;
+    }
+
+    const statusArgs = splitTopLevel(statusArgsBlock.slice(1, -1), ",");
+    statusCode =
+      inferLaravelResourceStatusCode(statusArgs[0], exampleContext) ?? statusCode;
+    rest = rest.slice(statusOpenParenIndex + statusArgsBlock.length).trim();
+  }
+
+  if (rest) {
+    return undefined;
+  }
+
+  const parsedResourceExpression = parseLaravelResourceReturnStatement(
+    `return ${resourceExpression};`,
+    exampleContext,
+  );
+  if (!parsedResourceExpression) {
+    return undefined;
+  }
+
+  return {
+    ...parsedResourceExpression,
+    statusCode,
   };
 }
 

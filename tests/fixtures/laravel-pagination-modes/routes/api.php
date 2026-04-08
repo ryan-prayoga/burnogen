@@ -24,4 +24,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/collection-conditional', [PaginationController::class, 'collectionConditional']);
     Route::get('/projects/collection-tapped', [PaginationController::class, 'collectionTapped']);
     Route::get('/projects/collection-json-wrapped', [PaginationController::class, 'collectionJsonWrapped']);
+    Route::get('/projects/collection-response-status', [PaginationController::class, 'collectionResponseStatus']);
 });
