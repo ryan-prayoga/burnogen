@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(18);
+    expect(artifacts.normalized.endpoints).toHaveLength(19);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -1093,6 +1093,57 @@ describe("Laravel adapter", () => {
         from: 1,
         last_page: 1,
         per_page: 18,
+        to: 1,
+        total: 1,
+      },
+      links: {
+        first: "?page=1",
+        last: "?page=1",
+        prev: null,
+        next: null,
+      },
+    });
+
+    const collectionTapped = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/projects/collection-tapped" && endpoint.method === "get",
+    );
+    const collectionTappedSuccess = collectionTapped?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(collectionTapped?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(collectionTappedSuccess?.schema?.properties?.data).toBeUndefined();
+    expect(collectionTappedSuccess?.schema?.properties?.tapped?.type).toBe("array");
+    expect(
+      collectionTappedSuccess?.schema?.properties?.tapped?.items?.properties?.position?.type,
+    ).toBe("integer");
+    expect(
+      collectionTappedSuccess?.schema?.properties?.tapped?.items?.properties?.identifier?.type,
+    ).toBe("integer");
+    expect(
+      collectionTappedSuccess?.schema?.properties?.tapped?.items?.properties?.owner?.type,
+    ).toBe("string");
+    expect(
+      collectionTappedSuccess?.schema?.properties?.tapped?.items?.properties?.label?.type,
+    ).toBe("string");
+    expect(collectionTappedSuccess?.schema?.properties?.meta?.properties?.per_page?.type).toBe("integer");
+    expect(collectionTappedSuccess?.example).toEqual({
+      tapped: [
+        {
+          position: 0,
+          identifier: 1,
+          owner: "user@example.com",
+          label: "tapped-project",
+        },
+      ],
+      meta: {
+        current_page: 1,
+        from: 1,
+        last_page: 1,
+        per_page: 19,
         to: 1,
         total: 1,
       },

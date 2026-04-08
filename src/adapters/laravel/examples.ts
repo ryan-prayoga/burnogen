@@ -325,6 +325,7 @@ function inferLaravelPassthroughCollectionChainExample(
     "filter",
     "when",
     "unless",
+    "tap",
     "values",
     "all",
     "toArray",
@@ -346,6 +347,12 @@ function inferLaravelPassthroughCollectionChainExample(
       consumePhpChainCall(currentRest, "unless");
     if (conditionalCall) {
       currentRest = conditionalCall.rest;
+      continue;
+    }
+
+    const tapCall = consumePhpChainCall(currentRest, "tap");
+    if (tapCall) {
+      currentRest = tapCall.rest;
       continue;
     }
 
