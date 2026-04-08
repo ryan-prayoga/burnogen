@@ -44,6 +44,7 @@ export async function extractLaravelResourceResponses(
       parsedResourceReturn.mode,
       classIndex,
       parsedResourceReturn.additional,
+      parsedResourceReturn.additionalSchema,
       parsedResourceReturn.payload,
       fileContext,
     );
@@ -60,6 +61,7 @@ async function buildLaravelResourceResponse(
   mode: "single" | "collection",
   classIndex: Map<string, PhpClassRecord>,
   additional?: unknown,
+  additionalSchemaHint?: SchemaObject,
   payload?: unknown,
   fileContext?: PhpFileContext,
 ): Promise<NormalizedResponse | undefined> {
@@ -77,9 +79,13 @@ async function buildLaravelResourceResponse(
     additional && typeof additional === "object" && !Array.isArray(additional)
       ? (additional as Record<string, unknown>)
       : undefined;
-  const additionalSchema = additionalProperties
+  const explicitAdditionalSchema = additionalProperties
     ? inferSchemaFromExample(additionalProperties)
     : undefined;
+  const additionalSchema = mergeLaravelSchemaObjects(
+    additionalSchemaHint,
+    explicitAdditionalSchema,
+  );
   const wrappedSchema: SchemaObject =
     mode === "collection"
       ? {
@@ -181,6 +187,7 @@ function parseLaravelResourceReturnStatement(
       resourceType: string;
       mode: "single" | "collection";
       additional?: unknown;
+      additionalSchema?: SchemaObject;
       payload?: unknown;
     }
   | undefined {
@@ -197,6 +204,7 @@ function parseLaravelResourceReturnStatement(
       resourceType: newResourceMatch[1],
       mode: "single",
       additional: explicitAdditional,
+      additionalSchema: undefined,
       payload: rawPayload
         ? parsePhpExampleValue(rawPayload, exampleContext)
         : undefined,
@@ -224,6 +232,7 @@ function parseLaravelResourceReturnStatement(
         inferredCollection?.additional,
         explicitAdditional,
       ),
+      additionalSchema: inferredCollection?.additionalSchema,
       payload: inferredCollection?.payload ??
         (rawPayload ? parsePhpExampleValue(rawPayload, exampleContext) : undefined),
     };
@@ -313,6 +322,7 @@ function inferLaravelPaginatorCollection(
   | {
       payload: unknown[];
       additional: Record<string, unknown>;
+      additionalSchema: SchemaObject;
     }
   | undefined {
   const resolvedExpression = resolveLaravelPayloadExpression(
@@ -343,6 +353,7 @@ function inferLaravelPaginatorCollection(
           args[3],
           exampleContext,
         ),
+        additionalSchema: buildLengthAwarePaginationSchema(),
       };
     case "simplePaginate":
       return {
@@ -353,6 +364,7 @@ function inferLaravelPaginatorCollection(
           args[3],
           exampleContext,
         ),
+        additionalSchema: buildSimplePaginationSchema(),
       };
     case "cursorPaginate":
       return {
@@ -361,6 +373,7 @@ function inferLaravelPaginatorCollection(
           perPage,
           args[2],
         ),
+        additionalSchema: buildCursorPaginationSchema(),
       };
     default:
       return undefined;
@@ -513,6 +526,79 @@ function buildCursorPaginationExample(
   };
 }
 
+function buildLengthAwarePaginationSchema(): SchemaObject {
+  return {
+    type: "object",
+    properties: {
+      meta: {
+        type: "object",
+        properties: {
+          current_page: { type: "integer" },
+          from: { type: "integer" },
+          last_page: { type: "integer" },
+          per_page: { type: "integer" },
+          to: { type: "integer" },
+          total: { type: "integer" },
+        },
+      },
+      links: {
+        type: "object",
+        properties: {
+          first: { type: "string" },
+          last: { type: "string" },
+          prev: { type: "string", nullable: true },
+          next: { type: "string", nullable: true },
+        },
+      },
+    },
+  };
+}
+
+function buildSimplePaginationSchema(): SchemaObject {
+  return {
+    type: "object",
+    properties: {
+      meta: {
+        type: "object",
+        properties: {
+          current_page: { type: "integer" },
+          from: { type: "integer" },
+          per_page: { type: "integer" },
+          to: { type: "integer" },
+        },
+      },
+      links: {
+        type: "object",
+        properties: {
+          prev: { type: "string", nullable: true },
+          next: { type: "string", nullable: true },
+        },
+      },
+    },
+  };
+}
+
+function buildCursorPaginationSchema(): SchemaObject {
+  return {
+    type: "object",
+    properties: {
+      meta: {
+        type: "object",
+        properties: {
+          per_page: { type: "integer" },
+        },
+      },
+      links: {
+        type: "object",
+        properties: {
+          prev: { type: "string", nullable: true },
+          next: { type: "string", nullable: true },
+        },
+      },
+    },
+  };
+}
+
 function parsePaginatorPosition(
   rawValue: string | undefined,
   exampleContext: PhpExampleContext,
@@ -573,4 +659,79 @@ function isPlainLaravelResourceObject(
   value: unknown,
 ): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function mergeLaravelSchemaObjects(
+  base: SchemaObject | undefined,
+  override: SchemaObject | undefined,
+): SchemaObject | undefined {
+  if (!base) {
+    return override;
+  }
+
+  if (!override) {
+    return base;
+  }
+
+  const merged: SchemaObject = {
+    ...base,
+    ...override,
+    type: override.type ?? base.type,
+    format: override.format ?? base.format,
+    nullable: override.nullable ?? base.nullable,
+    enum: override.enum ?? base.enum,
+    description: override.description ?? base.description,
+    required: override.required ?? base.required,
+    items: override.items
+      ? mergeLaravelSchemaObjects(base.items, override.items)
+      : base.items,
+    additionalProperties:
+      typeof override.additionalProperties === "object" &&
+      !Array.isArray(override.additionalProperties)
+        ? mergeLaravelSchemaObjects(
+          typeof base.additionalProperties === "object" &&
+            !Array.isArray(base.additionalProperties)
+            ? base.additionalProperties
+            : undefined,
+          override.additionalProperties,
+        )
+        : override.additionalProperties ?? base.additionalProperties,
+  };
+
+  if (base.properties || override.properties) {
+    merged.properties = mergeLaravelSchemaPropertyMaps(
+      base.properties,
+      override.properties,
+    );
+  }
+
+  return merged;
+}
+
+function mergeLaravelSchemaPropertyMaps(
+  base: Record<string, SchemaObject> | undefined,
+  override: Record<string, SchemaObject> | undefined,
+): Record<string, SchemaObject> | undefined {
+  if (!base) {
+    return override;
+  }
+
+  if (!override) {
+    return base;
+  }
+
+  const mergedEntries = new Map<string, SchemaObject>();
+
+  for (const [key, value] of Object.entries(base)) {
+    mergedEntries.set(key, value);
+  }
+
+  for (const [key, value] of Object.entries(override)) {
+    mergedEntries.set(
+      key,
+      mergeLaravelSchemaObjects(mergedEntries.get(key), value) ?? value,
+    );
+  }
+
+  return Object.fromEntries(mergedEntries);
 }

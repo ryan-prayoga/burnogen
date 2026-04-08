@@ -130,6 +130,16 @@ describe("Laravel adapter", () => {
     expect(listProjectsSuccess?.schema?.properties?.data?.items?.type).toBe("object");
     expect(listProjectsSuccess?.schema?.properties?.meta?.type).toBe("object");
     expect(listProjectsSuccess?.schema?.properties?.links?.type).toBe("object");
+    expect(listProjectsSuccess?.schema?.properties?.links?.properties?.first?.type).toBe("string");
+    expect(listProjectsSuccess?.schema?.properties?.links?.properties?.last?.type).toBe("string");
+    expect(listProjectsSuccess?.schema?.properties?.links?.properties?.prev).toEqual({
+      type: "string",
+      nullable: true,
+    });
+    expect(listProjectsSuccess?.schema?.properties?.links?.properties?.next).toEqual({
+      type: "string",
+      nullable: true,
+    });
     expect(listProjectsSuccess?.example).toEqual({
       data: [
         {
