@@ -18,7 +18,7 @@ class ProjectFilteredCollection extends ResourceCollection
                     'owner' => $project['owner_email'],
                     'label' => 'filtered-project',
                 ])
-                ->filter()
+                ->filter(fn ($project) => $project['owner'])
                 ->values()
                 ->all(),
         ];

@@ -373,7 +373,7 @@ function inferLaravelCollectionTransformExample(
 ): unknown | typeof unresolvedPhpExample {
   const normalized = rawValue.replace(/\s+/g, " ").trim();
   const mapMatch = normalized.match(
-    /^collect\s*\(\s*(.+?)\s*\)\s*->\s*map\s*\(\s*fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*(.+?)\)\s*(?:->\s*filter\s*\(\s*\))?\s*(?:->\s*values\s*\(\s*\))?\s*(?:->\s*(?:all|toArray)\s*\(\s*\))?$/,
+    /^collect\s*\(\s*(.+?)\s*\)\s*->\s*map\s*\(\s*fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*(.+?)\)\s*(?:->\s*filter\s*\(\s*(?:fn\s*\(\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\)\s*=>\s*.+?)?\s*\))?\s*(?:->\s*values\s*\(\s*\))?\s*(?:->\s*(?:all|toArray)\s*\(\s*\))?$/,
   );
   if (!mapMatch?.[1] || !mapMatch[2]) {
     return unresolvedPhpExample;
