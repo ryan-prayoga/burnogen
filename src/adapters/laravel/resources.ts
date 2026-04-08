@@ -159,6 +159,7 @@ async function parseLaravelResourceSchema(
       content,
       resourceFileContext,
       classIndex,
+      resourceRecord.fullName,
       payload,
       nextSeenResourceTypes,
     );
@@ -209,12 +210,15 @@ async function parseLaravelResourceCollectionSchema(
   content: string,
   resourceFileContext: PhpFileContext,
   classIndex: Map<string, PhpClassRecord>,
+  collectionType: string,
   payload: unknown,
   seenResourceTypes: Set<string>,
 ): Promise<LaravelResourceSchema | undefined> {
   const collectedResourceType = extractLaravelCollectedResourceType(
     content,
     resourceFileContext,
+    classIndex,
+    collectionType,
   );
   const collectedResourceSchema = collectedResourceType
     ? await parseLaravelResourceSchema(
@@ -287,19 +291,39 @@ function isLaravelResourceCollectionClass(
 function extractLaravelCollectedResourceType(
   content: string,
   fileContext: PhpFileContext,
+  classIndex: Map<string, PhpClassRecord>,
+  collectionType: string,
 ): string | undefined {
   const collectsMatch = content.match(
-    /(?:public|protected)\s+(?:[A-Za-z_][A-Za-z0-9_\\|?]+\s+)?\$collects\s*=\s*([^;]+);/,
+    /(?:public|protected|private)\s+(?:[A-Za-z_][A-Za-z0-9_\\|?]+\s+)?\$collects\s*=\s*([^;]+);/,
   );
-  if (!collectsMatch?.[1]) {
+  if (collectsMatch?.[1]) {
+    const rawCollects = collectsMatch[1].trim();
+    const classLikeValue = rawCollects.match(/^([A-Za-z0-9_\\]+)(?:::class)?$/)?.[1];
+    if (classLikeValue) {
+      return resolvePhpClassName(classLikeValue, fileContext);
+    }
+  }
+
+  return inferLaravelCollectedResourceTypeFromName(classIndex, collectionType);
+}
+
+function inferLaravelCollectedResourceTypeFromName(
+  classIndex: Map<string, PhpClassRecord>,
+  collectionType: string,
+): string | undefined {
+  if (!collectionType.endsWith("Collection")) {
     return undefined;
   }
 
-  const rawCollects = collectsMatch[1].trim();
-  const classLikeValue = rawCollects.match(/^([A-Za-z0-9_\\]+)(?:::class)?$/)?.[1];
-  return classLikeValue
-    ? resolvePhpClassName(classLikeValue, fileContext)
-    : undefined;
+  const baseCandidate = collectionType.slice(0, -("Collection".length));
+  const resourceCandidate = `${baseCandidate}Resource`;
+
+  return classIndex.has(baseCandidate)
+    ? baseCandidate
+    : classIndex.has(resourceCandidate)
+      ? resourceCandidate
+      : undefined;
 }
 
 function parseLaravelResourceReturnStatement(

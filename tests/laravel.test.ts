@@ -246,7 +246,7 @@ describe("Laravel adapter", () => {
     );
 
     expect(artifacts.normalized.framework).toBe("laravel");
-    expect(artifacts.normalized.endpoints).toHaveLength(4);
+    expect(artifacts.normalized.endpoints).toHaveLength(5);
 
     const simple = artifacts.normalized.endpoints.find(
       (endpoint) => endpoint.path === "/api/projects/simple" && endpoint.method === "get",
@@ -405,6 +405,53 @@ describe("Laravel adapter", () => {
         from: 1,
         last_page: 1,
         per_page: 12,
+        to: 1,
+        total: 1,
+      },
+      links: {
+        first: "?page=1",
+        last: "?page=1",
+        prev: null,
+        next: null,
+      },
+    });
+
+    const collectionAuto = artifacts.normalized.endpoints.find(
+      (endpoint) =>
+        endpoint.path === "/api/projects/collection-auto" && endpoint.method === "get",
+    );
+    const collectionAutoSuccess = collectionAuto?.responses.find(
+      (response) => response.statusCode === "200",
+    );
+    expect(collectionAuto?.parameters).toContainEqual(expect.objectContaining({
+      name: "page",
+      in: "query",
+    }));
+    expect(collectionAutoSuccess?.schema?.properties?.data?.type).toBe("array");
+    expect(
+      collectionAutoSuccess?.schema?.properties?.data?.items?.properties?.slug?.type,
+    ).toBe("string");
+    expect(
+      collectionAutoSuccess?.schema?.properties?.data?.items?.properties?.owner_email?.type,
+    ).toBe("string");
+    expect(collectionAutoSuccess?.schema?.properties?.meta?.properties?.source?.type).toBe("string");
+    expect(
+      collectionAutoSuccess?.schema?.properties?.meta?.properties?.per_page?.type,
+    ).toBe("integer");
+    expect(collectionAutoSuccess?.example).toEqual({
+      data: [
+        {
+          id: 1,
+          slug: "project-auto",
+          owner_email: "user@example.com",
+        },
+      ],
+      meta: {
+        source: "auto_collection",
+        current_page: 1,
+        from: 1,
+        last_page: 1,
+        per_page: 8,
         to: 1,
         total: 1,
       },

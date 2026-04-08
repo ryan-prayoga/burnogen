@@ -8,4 +8,5 @@ Route::prefix('api')->group(function () {
     Route::get('/projects/cursor', [PaginationController::class, 'cursor']);
     Route::get('/projects/merged', [PaginationController::class, 'merged']);
     Route::get('/projects/collection-class', [PaginationController::class, 'collectionClass']);
+    Route::get('/projects/collection-auto', [PaginationController::class, 'collectionAuto']);
 });
